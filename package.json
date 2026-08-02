@@ -1,0 +1,42 @@
+{
+  "name": "corroboration-kit",
+  "version": "0.1.0",
+  "description": "A domain-agnostic evidence-corroboration grader: distinct-source independence, a non-textual-signal gate for 'confirmed', a coverage ceiling, and disagreement surfaced as 'mixed' instead of averaged away.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "corroboration",
+    "evidence",
+    "verification",
+    "confidence",
+    "fact-checking",
+    "grading"
+  ],
+  "license": "MIT",
+  "author": "Lucas Kopietz",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
