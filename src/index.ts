@@ -107,6 +107,11 @@ function assertValidInput(signals: unknown, coverage: unknown): asserts signals 
     if (typeof source !== 'string') {
       throw new TypeError(`corroboration-kit: signals[${i}].source must be a string, got ${describeValue(source)}`)
     }
+    if (source.trim() === '') {
+      throw new TypeError(
+        `corroboration-kit: signals[${i}].source must not be empty; a signal with no identifiable artifact cannot be counted as independent`,
+      )
+    }
     if (!SIGNAL_KINDS.includes(kind as SignalKind)) {
       throw new TypeError(
         `corroboration-kit: signals[${i}].kind must be one of ${SIGNAL_KINDS.join(', ')}, got ${describeValue(kind)}`,
@@ -121,6 +126,41 @@ function assertValidInput(signals: unknown, coverage: unknown): asserts signals 
   if (!COVERAGES.includes(coverage as Coverage)) {
     throw new TypeError(`corroboration-kit: coverage must be one of ${COVERAGES.join(', ')}, got ${describeValue(coverage)}`)
   }
+}
+
+// The build targets ES2022 with no DOM or Node type packages, so the WHATWG
+// `URL` global is not declared. It exists at runtime on every supported Node
+// version and in browsers; declare only the two members used below.
+declare const URL: new (input: string) => { hash: string; readonly href: string }
+
+/**
+ * The identity a `source` string is counted under.
+ *
+ * Only differences that cannot change WHICH artifact is meant are folded:
+ * surrounding whitespace, Unicode canonical equivalence (NFC vs NFD, which
+ * differ between operating systems' file names), and, for http(s) URLs, the
+ * fragment, the case of scheme and host, an explicit default port, and dot
+ * segments (all via the WHATWG URL parser). A fragment is never sent to the
+ * server, so `https://a.example/doc#s1` and `https://a.example/doc#s2` are one
+ * page.
+ *
+ * Everything else stays distinct, because it can name a different artifact:
+ * path case, a trailing slash, a query string, and any non-http(s) string.
+ * Under-merging errs toward a false "independent", so callers who know two
+ * spellings name the same artifact should canonicalize before calling.
+ */
+function sourceKey(source: string): string {
+  const text = source.trim().normalize('NFC')
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const url = new URL(text)
+      url.hash = ''
+      return url.href
+    } catch {
+      // Not a parseable URL after all: fall through and use the trimmed text.
+    }
+  }
+  return text
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -199,30 +239,33 @@ export function coverageOf(
  */
 export function corroborate(signals: Signal[], coverage: Coverage): Corroboration {
   assertValidInput(signals, coverage)
-  const distinctSources = (vote: Vote): number =>
-    new Set(signals.filter((s) => s.vote === vote).map((s) => s.source)).size
-
-  const supports = distinctSources('supports')
-  const contradicts = distinctSources('contradicts')
-
-  const supportingKinds = new Set(
-    signals.filter((s) => s.vote === 'supports').map((s) => s.kind),
-  )
-  const hasNonTextualSupport = [...supportingKinds].some((k) => k !== 'textual')
+  // Distinct artifacts per vote, and whether any signal on that side is
+  // non-textual. Keys are strings in a Set, so '__proto__' is an ordinary id.
+  const supporting = new Set<string>()
+  const contradicting = new Set<string>()
+  let nonTextualSupport = false
+  let nonTextualContradiction = false
+  for (const s of signals) {
+    if (s.vote === 'supports') {
+      supporting.add(sourceKey(s.source))
+      if (s.kind !== 'textual') nonTextualSupport = true
+    } else if (s.vote === 'contradicts') {
+      contradicting.add(sourceKey(s.source))
+      if (s.kind !== 'textual') nonTextualContradiction = true
+    }
+  }
+  const supports = supporting.size
+  const contradicts = contradicting.size
 
   let verdict: Verdict
 
   if (supports > 0 && contradicts > 0) {
     verdict = 'mixed' // real disagreement, surfaced, not blended
   } else if (contradicts > 0) {
-    const contradictingKinds = new Set(
-      signals.filter((s) => s.vote === 'contradicts').map((s) => s.kind),
-    )
-    const hasNonTextualContradiction = [...contradictingKinds].some((k) => k !== 'textual')
-    verdict = contradicts >= 2 && hasNonTextualContradiction ? 'confirmed' : 'likely'
+    verdict = contradicts >= 2 && nonTextualContradiction ? 'confirmed' : 'likely'
   } else if (supports === 0) {
     verdict = coverage === 'thin' ? 'inconclusive' : 'not-found'
-  } else if (supports >= 2 && hasNonTextualSupport) {
+  } else if (supports >= 2 && nonTextualSupport) {
     verdict = 'confirmed'
   } else {
     verdict = 'likely' // one source, or several sources that are all textual

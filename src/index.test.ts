@@ -207,3 +207,112 @@ describe('corroborate input validation (fails closed instead of grading bad inpu
     expect(corroborate([odd], 'strong').verdict).toBe('likely')
   })
 })
+
+describe('source identity: one artifact counts once however it is spelled', () => {
+  // Grade one textual and one structural supporting signal from two source
+  // strings and report how many distinct artifacts the kit saw. If the two
+  // strings are one artifact the bar is not met ('likely'); if they are two,
+  // the pair confirms.
+  const countFor = (a: string, b: string) => {
+    const result = corroborate(
+      [
+        { source: a, kind: 'textual', vote: 'supports', detail: 'first read' },
+        { source: b, kind: 'structural', vote: 'supports', detail: 'second read' },
+      ],
+      'strong',
+    )
+    return { supports: result.supports, verdict: result.verdict }
+  }
+  const same = { supports: 1, verdict: 'likely' }
+  const different = { supports: 2, verdict: 'confirmed' }
+
+  describe('folded: differences that cannot change which artifact is meant', () => {
+    // Before this fix every one of these pairs counted as two independent
+    // sources, so a second citation of the same artifact could confirm a claim.
+    it.each([
+      ['trailing space', 'doc.md', 'doc.md '],
+      ['leading space', 'doc.md', ' doc.md'],
+      ['tab and newline', 'doc.md', '\tdoc.md\n'],
+      ['non-breaking space', 'doc.md', ' doc.md '],
+      ['NFC vs NFD (macOS file names)', 'café.md', 'café.md'],
+      ['URL fragment', 'https://a.example/x', 'https://a.example/x#s2'],
+      ['two different fragments', 'https://a.example/x#a', 'https://a.example/x#b'],
+      ['empty fragment', 'https://a.example/x', 'https://a.example/x#'],
+      ['fragment on a URL with a query', 'https://a.example/x?a=1#f', 'https://a.example/x?a=1'],
+      ['scheme and host case', 'https://a.example/x', 'HTTPS://A.EXAMPLE/x'],
+      ['bare host and host with slash', 'https://a.example', 'https://a.example/'],
+      ['explicit default port', 'https://a.example:443/x', 'https://a.example/x'],
+      ['dot segments', 'https://a.example/a/../x', 'https://a.example/x'],
+      ['space vs %20 in the path', 'https://a.example/a b', 'https://a.example/a%20b'],
+      ['whitespace around a URL with a fragment', '  https://a.example/x#f  ', 'https://a.example/x'],
+    ])('%s', (_name, a, b) => {
+      expect(countFor(a, b)).toEqual(same)
+    })
+  })
+
+  describe('kept distinct: differences that can name a different artifact', () => {
+    // These pin the other side of the line. Under-merging is the unsafe
+    // direction, so the README tells callers to canonicalize these themselves.
+    it.each([
+      ['path case (paths and ids are case-sensitive)', 'https://a.example/X', 'https://a.example/x'],
+      ['file name case', 'Doc.md', 'doc.md'],
+      ['trailing slash on a path', 'https://a.example/x', 'https://a.example/x/'],
+      ['query string present vs absent', 'https://a.example/x', 'https://a.example/x?a=1'],
+      ['different query values', 'https://a.example/x?a=1', 'https://a.example/x?a=2'],
+      ['http vs https', 'http://a.example/x', 'https://a.example/x'],
+      ['www vs bare host', 'https://a.example/x', 'https://www.a.example/x'],
+      ['userinfo in the URL', 'https://user@a.example/x', 'https://a.example/x'],
+      ['fragment on a non-http(s) scheme', 'file:///a#x', 'file:///a'],
+      ['fragment on a non-URL id', 'db-row#1', 'db-row'],
+      ['internal whitespace', 'a b', 'a  b'],
+      ['different files', 'a.md', 'b.md'],
+    ])('%s', (_name, a, b) => {
+      expect(countFor(a, b)).toEqual(different)
+    })
+  })
+
+  it('folds identity for contradicting sources the same way', () => {
+    const result = corroborate(
+      [
+        { source: 'https://a.example/x', kind: 'textual', vote: 'contradicts', detail: 'd' },
+        { source: 'https://a.example/x#s2', kind: 'structural', vote: 'contradicts', detail: 'd' },
+      ],
+      'strong',
+    )
+    expect(result.contradicts).toBe(1)
+    expect(result.verdict).toBe('likely')
+  })
+
+  it('reports the caller\'s original source strings untouched in result.signals', () => {
+    const result = corroborate(
+      [{ source: '  https://A.example/x#f ', kind: 'structural', vote: 'supports', detail: 'd' }],
+      'strong',
+    )
+    expect(result.signals[0]?.source).toBe('  https://A.example/x#f ')
+  })
+
+  it('treats a string that only looks like a URL as plain text when it does not parse', () => {
+    expect(countFor('https://', 'https://#')).toEqual(different)
+  })
+
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf'])(
+    'treats %j as an ordinary source id',
+    (id) => {
+      expect(countFor(id, 'other')).toEqual(different)
+      expect(countFor(id, id)).toEqual(same)
+    },
+  )
+
+  it('handles very long and non-ASCII source ids', () => {
+    expect(countFor('x'.repeat(200_000), 'x'.repeat(200_000) + ' ')).toEqual(same)
+    expect(countFor('\u{1F4C4} report', '\u{1F4C4} report ')).toEqual(same)
+    // A long http-looking prefix must not make the scheme check slow.
+    expect(countFor('h'.repeat(200_000), 'h'.repeat(200_000) + 'x')).toEqual(different)
+  })
+
+  // Before this fix '' was accepted, and two empty sources silently merged
+  // into one "artifact" while one empty plus one real source counted as two.
+  it.each(['', ' ', '\t\n', ' '])('rejects an empty or whitespace-only source %j', (source) => {
+    expect(() => countFor(source, 'other')).toThrow(/signals\[0\]\.source must not be empty/)
+  })
+})
