@@ -275,5 +275,8 @@ export function corroborate(signals: Signal[], coverage: Coverage): Corroboratio
   // never be reported as "confirmed", no matter how the signals line up.
   if (coverage === 'thin' && verdict === 'confirmed') verdict = 'likely'
 
-  return { verdict, coverage, signals, supports, contradicts }
+  // A snapshot, not the caller's array: counts and verdict describe the
+  // signals as they were graded, so later edits to the input must not be able
+  // to make `result.signals` disagree with them.
+  return { verdict, coverage, signals: signals.map((s) => ({ ...s })), supports, contradicts }
 }

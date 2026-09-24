@@ -316,3 +316,58 @@ describe('source identity: one artifact counts once however it is spelled', () =
     expect(() => countFor(source, 'other')).toThrow(/signals\[0\]\.source must not be empty/)
   })
 })
+
+describe('input is never mutated and the result is a snapshot', () => {
+  const build = (): Signal[] => [
+    { source: 'b', kind: 'textual', vote: 'supports', detail: 'one' },
+    { source: 'a', kind: 'structural', vote: 'supports', detail: 'two' },
+    { source: 'a', kind: 'textual', vote: 'inconclusive', detail: 'three' },
+  ]
+
+  it('does not modify a deeply frozen input array or its signals', () => {
+    const input = build()
+    input.forEach((s) => Object.freeze(s))
+    Object.freeze(input)
+    const before = JSON.stringify(input)
+    const result = corroborate(input, 'strong')
+    expect(JSON.stringify(input)).toBe(before)
+    expect(result.verdict).toBe('confirmed')
+  })
+
+  it('returns equal-but-not-identical signals, in input order', () => {
+    const input = build()
+    const result = corroborate(input, 'strong')
+    expect(result.signals).toEqual(input)
+    expect(result.signals).not.toBe(input)
+    result.signals.forEach((s, i) => expect(s).not.toBe(input[i]))
+  })
+
+  // Before this fix result.signals was the caller's own array, so a later
+  // push or edit made the result contradict its own counts.
+  it('is unaffected by the caller editing the input after grading', () => {
+    const input = build()
+    const result = corroborate(input, 'strong')
+    input.push({ source: 'c', kind: 'behavioral', vote: 'contradicts', detail: 'late' })
+    const first = input[0]
+    if (first) first.vote = 'contradicts'
+    expect(result.signals).toHaveLength(3)
+    expect(result.signals[0]?.vote).toBe('supports')
+    expect(result.supports).toBe(2)
+    expect(result.contradicts).toBe(0)
+  })
+
+  it('lets the caller edit the result without touching the input', () => {
+    const input = build()
+    const result = corroborate(input, 'strong')
+    result.signals.pop()
+    const first = result.signals[0]
+    if (first) first.detail = 'edited'
+    expect(input).toHaveLength(3)
+    expect(input[0]?.detail).toBe('one')
+  })
+
+  it('returns fresh result objects on each call', () => {
+    const input = build()
+    expect(corroborate(input, 'strong')).not.toBe(corroborate(input, 'strong'))
+  })
+})
