@@ -371,3 +371,148 @@ describe('input is never mutated and the result is a snapshot', () => {
     expect(corroborate(input, 'strong')).not.toBe(corroborate(input, 'strong'))
   })
 })
+
+describe('coverageOf boundaries', () => {
+  const rank: Record<Coverage, number> = { thin: 0, partial: 1, strong: 2 }
+
+  describe('nothing examined, or nothing known, is thin', () => {
+    // Before this fix a small pool with zero units read was rated strong (or
+    // partial), and NaN sampled units over a small pool was rated strong.
+    it.each([
+      [0, 10, true],
+      [0, 10, false],
+      [0, 30, true],
+      [0, 1, true],
+      [-5, 10, true],
+      [-0.5, 10, true],
+      [Number.NaN, 10, true],
+      [Number.NaN, 10, false],
+      [Number.POSITIVE_INFINITY, 10, true],
+      [Number.NEGATIVE_INFINITY, 10, true],
+    ])('sampled %s of %s (structural %s) is thin', (sampled, total, structural) => {
+      expect(coverageOf(sampled, total, structural)).toBe('thin')
+    })
+
+    it.each([
+      [5, 0],
+      [5, -1],
+      [5, Number.NaN],
+      [5, Number.POSITIVE_INFINITY],
+      [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+      [0, 0],
+    ])('sampled %s of an unknown pool of %s is thin', (sampled, total) => {
+      expect(coverageOf(sampled, total, true)).toBe('thin')
+      expect(coverageOf(sampled, total, false)).toBe('thin')
+    })
+
+    it('treats non-number arguments from untyped callers as thin', () => {
+      const loose = coverageOf as (a: unknown, b: unknown, c: unknown) => Coverage
+      expect(loose(undefined, 10, true)).toBe('thin')
+      expect(loose(null, 10, true)).toBe('thin')
+      expect(loose('5', '10', true)).toBe('thin')
+      expect(loose(5, undefined, true)).toBe('thin')
+    })
+  })
+
+  describe('the 0.15 (partial) and 0.6 (high ratio) thresholds, on a large pool', () => {
+    it.each([
+      [14, 100, false, 'thin'],
+      [15, 100, false, 'partial'],
+      [16, 100, false, 'partial'],
+      [59, 100, false, 'partial'],
+      [60, 100, false, 'partial'],
+      [61, 100, false, 'partial'],
+      [14, 100, true, 'thin'],
+      [15, 100, true, 'partial'],
+      [59, 100, true, 'partial'],
+      [60, 100, true, 'strong'],
+      [61, 100, true, 'strong'],
+      [100, 100, true, 'strong'],
+    ] as const)('%s of %s, structural %s -> %s', (sampled, total, structural, expected) => {
+      expect(coverageOf(sampled, total, structural)).toBe(expected)
+    })
+
+    it('never reaches strong without structural read access, even reading everything', () => {
+      expect(coverageOf(1000, 1000, false)).toBe('partial')
+      expect(coverageOf(300, 300, false)).toBe('partial')
+    })
+
+    it('treats more units sampled than exist as the whole pool', () => {
+      expect(coverageOf(500, 100, true)).toBe('strong')
+      expect(coverageOf(500, 100, false)).toBe('partial')
+    })
+  })
+
+  describe('the 30-unit small-pool rule', () => {
+    // Documented, deliberate behavior: for a pool of 30 or fewer units the
+    // sample ratio is not consulted, only whether anything was examined. The
+    // README calls out that the caller is trusted to have read the pool.
+    it('rates any non-empty sample of a pool of exactly 30 by structural access alone', () => {
+      expect(coverageOf(30, 30, true)).toBe('strong')
+      expect(coverageOf(1, 30, true)).toBe('strong')
+      expect(coverageOf(1, 30, false)).toBe('partial')
+    })
+
+    it('switches to the ratio rules at 31 units', () => {
+      expect(coverageOf(1, 31, true)).toBe('thin')
+      expect(coverageOf(4, 31, true)).toBe('thin') // 0.129
+      expect(coverageOf(5, 31, true)).toBe('partial') // 0.161
+      expect(coverageOf(18, 31, true)).toBe('partial') // 0.581
+      expect(coverageOf(19, 31, true)).toBe('strong') // 0.613
+    })
+
+    it('handles pools of one unit', () => {
+      expect(coverageOf(1, 1, true)).toBe('strong')
+      expect(coverageOf(1, 1, false)).toBe('partial')
+    })
+  })
+
+  describe('structural read access', () => {
+    // Before this fix any truthy value promoted coverage, including the
+    // string 'false'.
+    it.each([['false'], ['true'], [1], [{}], [[]], ['yes']])('does not treat %j as structural access', (flag) => {
+      expect(coverageOf(10, 10, flag as unknown as boolean)).toBe('partial')
+    })
+
+    it('never lowers coverage', () => {
+      for (const total of [1, 5, 30, 31, 100, 1000]) {
+        for (const sampled of [0, 1, 2, 5, 15, 30, 60, 100, 600, 1000]) {
+          expect(rank[coverageOf(sampled, total, true)]).toBeGreaterThanOrEqual(rank[coverageOf(sampled, total, false)])
+        }
+      }
+    })
+  })
+
+  it('never lowers coverage as more units are sampled from the same pool', () => {
+    for (const structural of [true, false]) {
+      for (const total of [1, 2, 10, 30, 31, 32, 99, 100, 101, 400, 1000]) {
+        let previous = 0
+        for (let sampled = 0; sampled <= total + 2; sampled++) {
+          const now = rank[coverageOf(sampled, total, structural)]
+          // Coverage may only stay level or rise as the sample grows.
+          expect(now).toBeGreaterThanOrEqual(previous)
+          previous = now
+        }
+      }
+    }
+  })
+
+  it('is deterministic and returns only the three coverage levels', () => {
+    const seen = new Set<Coverage>()
+    for (let total = -2; total <= 80; total++) {
+      for (let sampled = -2; sampled <= 90; sampled++) {
+        for (const structural of [true, false]) {
+          const first = coverageOf(sampled, total, structural)
+          expect(coverageOf(sampled, total, structural)).toBe(first)
+          seen.add(first)
+        }
+      }
+    }
+    expect([...seen].sort()).toEqual(['partial', 'strong', 'thin'])
+  })
+
+  it('feeds corroborate: a scan of nothing cannot confirm or refute, it is inconclusive', () => {
+    const coverage = coverageOf(0, 10, true)
+    expect(corroborate([], coverage).verdict).toBe('inconclusive')
+  })
+})

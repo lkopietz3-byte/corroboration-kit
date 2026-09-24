@@ -206,12 +206,17 @@ export function coverageOf(
   totalUnits: number,
   hadStructuralReadAccess: boolean,
 ): Coverage {
-  if (totalUnits <= 0) return 'thin'
+  // A real, positive, finite count is required on both sides. Number.isFinite
+  // rejects NaN, Infinity and non-numbers, which a plain `<= 0` check let
+  // through (NaN or 0 sampled over a small pool was rated 'strong'/'partial').
+  const isCount = (n: number): boolean => Number.isFinite(n) && n > 0
+  if (!isCount(totalUnits) || !isCount(sampledUnits)) return 'thin'
   const ratio = sampledUnits / totalUnits
-  // A small pool read almost whole, or a high sample ratio, is strong -
-  // and a structural read helps even when the per-unit sample is partial.
+  // A small pool, or a high sample ratio, is strong - and a structural read
+  // helps even when the per-unit sample is partial. Only a literal `true`
+  // counts as structural access, so a truthy string cannot promote coverage.
   if (totalUnits <= 30 || ratio >= 0.6) {
-    return hadStructuralReadAccess ? 'strong' : 'partial'
+    return hadStructuralReadAccess === true ? 'strong' : 'partial'
   }
   if (ratio >= 0.15) return 'partial'
   return 'thin'
