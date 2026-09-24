@@ -73,6 +73,56 @@ export interface Corroboration {
   contradicts: number
 }
 
+const SIGNAL_KINDS: readonly SignalKind[] = ['textual', 'structural', 'behavioral', 'declarative']
+const VOTES: readonly Vote[] = ['supports', 'contradicts', 'inconclusive']
+const COVERAGES: readonly Coverage[] = ['strong', 'partial', 'thin']
+
+/** Render an untrusted value for an error message without dumping it whole. */
+function describeValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return JSON.stringify(value.length > 40 ? `${value.slice(0, 40)}...` : value)
+  }
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'an array'
+  return typeof value
+}
+
+/**
+ * Fail closed on input the type system would have rejected. Without this a
+ * JavaScript caller (or a cast) could pass `kind: 'Textual'` and have it
+ * counted as non-textual, or `coverage: 'Thin'` and skip the thin-coverage
+ * ceiling, and get a 'confirmed' verdict out of it.
+ */
+function assertValidInput(signals: unknown, coverage: unknown): asserts signals is Signal[] {
+  if (!Array.isArray(signals)) {
+    throw new TypeError(`corroboration-kit: signals must be an array of Signal objects, got ${describeValue(signals)}`)
+  }
+  // Index loop, not forEach: forEach would silently skip holes in a sparse array.
+  for (let i = 0; i < signals.length; i++) {
+    const s: unknown = signals[i]
+    if (typeof s !== 'object' || s === null) {
+      throw new TypeError(`corroboration-kit: signals[${i}] must be a Signal object, got ${describeValue(s)}`)
+    }
+    const { source, kind, vote } = s as Record<string, unknown>
+    if (typeof source !== 'string') {
+      throw new TypeError(`corroboration-kit: signals[${i}].source must be a string, got ${describeValue(source)}`)
+    }
+    if (!SIGNAL_KINDS.includes(kind as SignalKind)) {
+      throw new TypeError(
+        `corroboration-kit: signals[${i}].kind must be one of ${SIGNAL_KINDS.join(', ')}, got ${describeValue(kind)}`,
+      )
+    }
+    if (!VOTES.includes(vote as Vote)) {
+      throw new TypeError(
+        `corroboration-kit: signals[${i}].vote must be one of ${VOTES.join(', ')}, got ${describeValue(vote)}`,
+      )
+    }
+  }
+  if (!COVERAGES.includes(coverage as Coverage)) {
+    throw new TypeError(`corroboration-kit: coverage must be one of ${COVERAGES.join(', ')}, got ${describeValue(coverage)}`)
+  }
+}
+
 const VERDICT_LABEL: Record<Verdict, string> = {
   confirmed: 'confirmed',
   likely: 'likely',
@@ -148,6 +198,7 @@ export function coverageOf(
  *    on 'confirmed', regardless of how the signals otherwise line up.
  */
 export function corroborate(signals: Signal[], coverage: Coverage): Corroboration {
+  assertValidInput(signals, coverage)
   const distinctSources = (vote: Vote): number =>
     new Set(signals.filter((s) => s.vote === vote).map((s) => s.source)).size
 
