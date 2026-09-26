@@ -8,7 +8,8 @@
     "verification",
     "confidence",
     "fact-checking",
-    "grading"
+    "grading",
+    "typescript"
   ],
   "author": "Lucas Kopietz",
   "license": "MIT",
