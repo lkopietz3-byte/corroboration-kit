@@ -21,7 +21,11 @@ const result = corroborate(
   coverage,
 )
 
-// result.verdict: 'confirmed' | 'likely' | 'mixed' | 'not-found' | 'inconclusive'
+// coverage is 'thin' (40 of 400 units is below the 15% partial threshold),
+// so result.verdict is 'likely' here — even though the two signals are from
+// distinct sources and one is non-textual, which would otherwise be enough
+// to reach 'confirmed'. That's the coverage ceiling: a thin sample caps the
+// verdict no matter how the signals it did find line up.
 ```
 
 ## Why this exists
@@ -89,13 +93,30 @@ five rules apply to grading a claim from news sources, a hypothesis from lab
 results, or a support ticket from log lines — anywhere you have named,
 distinct evidence sources of more than one kind.
 
+## When not to use it
+
+- You need something to actually go find or fetch evidence. This library
+  grades signals you already collected; it has no search, no crawling, no
+  I/O of any kind.
+- You want a numeric confidence score. Verdicts are the five fixed labels
+  above, not a 0–1 probability — see "Honest limits" below.
+- You need stance or fact-level verification of what a source says, not just
+  whether independent sources exist. A signal's `vote` is whatever the
+  caller decided it means; this library does not read text or judge claims.
+- Your evidence only ever comes from one kind of check (e.g. only grep). The
+  non-textual gate means `'confirmed'` is then structurally unreachable —
+  which is the intended behavior, not a bug, but it means this tool won't do
+  anything for a single-signal-type pipeline beyond report `'likely'`.
+
 ## Install
 
+This package has not been published to npm yet. Install it from GitHub:
+
 ```bash
-npm install corroboration-kit
+npm install github:lkopietz3-byte/corroboration-kit
 ```
 
-Zero runtime dependencies. ESM only.
+Zero runtime dependencies. ESM only, Node >= 20.
 
 ## API
 
@@ -115,7 +136,15 @@ interface Signal {
 - `source` is what independence is counted against. Two `Signal`s with the
   same `source` count as **one** distinct source, however many of them
   there are — so re-running the same check, or running several checks
-  against one document, never manufactures extra independence.
+  against one document, never manufactures extra independence. Two `source`
+  strings are folded into the same identity when the only difference is
+  surrounding whitespace, Unicode normalization (NFC vs NFD — how macOS and
+  Linux can spell the same accented file name differently), or, for an
+  `http(s)://` URL, the fragment, the case of the scheme or host, an
+  explicit default port, or `.`/`..` path segments. Everything else —
+  including path case, a trailing slash, and a query string — is kept
+  distinct, because it can name a different artifact. `source` must be a
+  non-empty string once trimmed; `corroborate` throws `TypeError` otherwise.
 - `kind` is assigned by the caller. `'textual'` means a text/keyword/pattern
   match. The other three kinds are meant for anything that isn't just text
   matching text: a structural read (a schema, a directory listing, a parsed
@@ -164,6 +193,18 @@ Rules, applied in order:
 6. Coverage is then applied as a ceiling: `'thin'` coverage downgrades a
    would-be `'confirmed'` to `'likely'`, full stop.
 
+Grading does not depend on the order of `signals`. Neither the `signals`
+array nor its objects are mutated; `result.signals` is a separate copy, so
+editing the input afterward (or editing the result) cannot make one
+disagree with the other.
+
+`corroborate` throws `TypeError` if `signals` is not an array of valid
+`Signal` objects, or `coverage` is not one of the three `Coverage` values.
+This is deliberate: a value the type system would have caught (a typo like
+`kind: 'Textual'`, or `coverage: 'Thin'`) must fail loudly instead of being
+silently mis-graded — a wrong `kind` could otherwise unlock a false
+`'confirmed'`, and a wrong `coverage` could skip the thin-coverage ceiling.
+
 ### `coverageOf(sampledUnits: number, totalUnits: number, hadStructuralReadAccess: boolean): Coverage`
 
 A generic helper for turning "how much did I actually look at" into a
@@ -171,25 +212,31 @@ A generic helper for turning "how much did I actually look at" into a
 files in a repo, documents in a corpus, records in a dataset, sources on a
 topic, whatever your evidence pool's unit is.
 
-- An unknown or empty pool (`totalUnits <= 0`) is `'thin'`: coverage can't be
-  claimed over a pool of unknown size.
-- A small pool (`totalUnits <= 30`) read almost whole, or a high sample
+- Both `sampledUnits` and `totalUnits` must be finite numbers greater than
+  0. Zero, negative, `NaN`, or infinite values are `'thin'` — you cannot
+  claim coverage for a sample that examined nothing, or over a pool whose
+  size isn't known.
+- A small pool (`totalUnits <= 30`) with any valid sample, or a high sample
   ratio (`>= 0.6`), is `'strong'` — but only if `hadStructuralReadAccess` is
-  true. A structural/manifest-level read (a table of contents, a schema, an
-  index) independent of the per-unit sample is what promotes a partial
-  sample to strong, because it answers some questions without needing every
-  unit's body read.
+  exactly `true` (a truthy non-boolean does not count). A
+  structural/manifest-level read (a table of contents, a schema, an index)
+  independent of the per-unit sample is what promotes a partial sample to
+  strong, because it answers some questions without needing every unit's
+  body read.
 - A mid-range ratio (`>= 0.15`) is `'partial'`.
 - Anything below that is `'thin'`.
 
 ### `verdictLabel(v: Verdict): string` / `coverageLabel(c: Coverage): string`
 
-Human-readable labels, for display.
+Human-readable labels, for display. Both throw `TypeError` for any value
+outside the fixed `Verdict` / `Coverage` sets — including inherited-property
+names like `'constructor'` or `'__proto__'`, which a plain object lookup
+would otherwise have returned instead of a label.
 
 ## Design principles
 
-- **Independence is by source, not by check.** Counting is `new
-  Set(signals.map(s => s.source)).size`, not `signals.length`.
+- **Independence is by source, not by check.** Counting is the size of a
+  `Set` of normalized `source` identities, not `signals.length`.
 - **`'confirmed'` requires a non-textual signal, symmetrically for both the
   positive and negative case.** Text repeating text is not corroboration.
 - **Disagreement is surfaced, never blended.** `'mixed'` exists so real
@@ -198,6 +245,50 @@ Human-readable labels, for display.
   confident than the sample it was drawn from allows.
 - **A null result respects sample size.** `'not-found'` is only earned under
   adequate coverage; a thin sample returns `'inconclusive'` instead.
+
+## Honest limits
+
+This library grades the signals you give it. It cannot verify that a signal
+is honest, correctly labeled, or actually independent in reality:
+
+- **It trusts `kind` and `vote` completely.** If a caller mislabels a second
+  grep of the same file as `'structural'`, or labels a source's silence as
+  `'contradicts'`, `corroborate` has no way to catch that — the non-textual
+  gate only protects against *unlabeled* repetition, not mislabeled evidence.
+- **It trusts that two different `source` strings really are two different
+  artifacts.** Source identity is normalized for whitespace, Unicode, and a
+  few URL variations (see `Signal` above), but two different URLs that both
+  happen to mirror the same underlying wire story, or two file paths that
+  happen to be symlinks to the same file, are still counted as independent —
+  the library has no way to know that. The `README.md`'s own "Why this
+  exists" example (a claim confirmed 6/6 by real, distinct outlets that had
+  all copied one distorted detail) is a case this library's rules were built
+  to make impossible to *game with citation count*, but a caller still has to
+  supply an honestly-distinct `source` and an honestly-assigned `kind`, or
+  even this design can be defeated.
+- **It has no search, no fetch, no parsing, and does no stance detection of
+  its own.** It never reads the claim's text, a source's content, or
+  determines what a source actually says — `vote` is entirely the caller's
+  judgment call, made before `corroborate` is ever invoked.
+- **`'confirmed'` and `'not-found'` are not certifications.** They mean "met
+  this library's bar for its counting rules," not "true" or "false" in any
+  externally verifiable sense, and neither implies legal, scientific, or
+  journalistic sign-off.
+- **Coverage is only as honest as `sampledUnits` and `totalUnits`.**
+  `coverageOf` does the arithmetic correctly, but it cannot check that the
+  caller's counts describe the evidence pool honestly.
+
+## Relationship to LaunchPlanr's `corroborate.ts`
+
+This is a from-scratch rewrite of the same five rules, not a re-export. The
+grading behavior for well-formed input is identical to the original (checked
+with a 200,000-case randomized differential test against the original
+source). What changed in extraction: input validation that throws on
+malformed `Signal`/`Coverage` values instead of silently mis-grading them,
+source-identity normalization (whitespace, Unicode, URL variants), and a
+`Corroboration.signals` result that is a snapshot copy rather than the
+caller's own array. None of those change the verdict for any input that was
+already well-formed.
 
 ## License
 

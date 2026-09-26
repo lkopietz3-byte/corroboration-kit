@@ -51,7 +51,8 @@ export type Verdict = 'confirmed' | 'likely' | 'mixed' | 'not-found' | 'inconclu
 export interface Signal {
   /** The distinct source artifact this signal was read from. Two signals
    * with the same `source` count as ONE independent source, however many
-   * of them there are. */
+   * of them there are. Must be a non-empty string after trimming whitespace;
+   * `corroborate` throws `TypeError` otherwise. */
   source: string
   /** The evidence type, assigned by the caller. Only non-'textual' kinds
    * can unlock a 'confirmed' verdict — see the module doc comment. */
@@ -64,8 +65,15 @@ export interface Signal {
 
 /** The result of grading a set of signals. */
 export interface Corroboration {
+  /** The grade `corroborate` assigned. See `corroborate`'s doc comment for
+   * exactly how it is derived. */
   verdict: Verdict
+  /** The `coverage` value passed in, echoed back for convenience. */
   coverage: Coverage
+  /** A copy of the input signals, in the order they were passed. This is a
+   * snapshot: it is a different array (and different objects) from whatever
+   * was passed to `corroborate`, so mutating either side afterward cannot
+   * make a result disagree with the input it was graded from, or vice versa. */
   signals: Signal[]
   /** Count of DISTINCT sources that voted 'supports'. */
   supports: number
@@ -177,7 +185,10 @@ const COVERAGE_LABEL: Record<Coverage, string> = {
   thin: 'thin coverage',
 }
 
-/** Human-readable label for a verdict. */
+/**
+ * Human-readable label for a verdict, e.g. `'mixed'` -> `'mixed signals'`.
+ * @throws {TypeError} for any value other than the five `Verdict` literals.
+ */
 export function verdictLabel(v: Verdict): string {
   // hasOwn, not a bare lookup: 'constructor' or '__proto__' from an untyped
   // caller would otherwise return an inherited function or object.
@@ -187,7 +198,10 @@ export function verdictLabel(v: Verdict): string {
   return VERDICT_LABEL[v]
 }
 
-/** Human-readable label for a coverage level. */
+/**
+ * Human-readable label for a coverage level, e.g. `'thin'` -> `'thin coverage'`.
+ * @throws {TypeError} for any value other than the three `Coverage` literals.
+ */
 export function coverageLabel(c: Coverage): string {
   if (!Object.hasOwn(COVERAGE_LABEL, c)) {
     throw new TypeError(`corroboration-kit: unknown coverage ${describeValue(c)}`)
@@ -202,16 +216,22 @@ export function coverageLabel(c: Coverage): string {
  * records in a dataset, sources on a topic. The caller decides what counts
  * as one unit and what counts as a "structural" read.
  *
- * @param sampledUnits - how many units were actually examined.
- * @param totalUnits - the size of the full evidence pool. `<= 0` (unknown or
- *   empty pool) is treated as thin: coverage cannot be claimed over a pool
- *   whose size isn't known.
+ * @param sampledUnits - how many units were actually examined. Must be a
+ *   finite number greater than 0, or the result is 'thin' — you cannot claim
+ *   coverage for a sample that was zero, negative, `NaN`, or infinite.
+ * @param totalUnits - the size of the full evidence pool. Same rule: must be
+ *   a finite number greater than 0, or the result is 'thin' because coverage
+ *   cannot be claimed over a pool whose size isn't known.
  * @param hadStructuralReadAccess - whether the scan also had access to a
  *   structural/manifest-level view of the pool (a table of contents, a
  *   schema, a directory listing, an index) independent of the per-unit
  *   sample. This can promote a partial sample to strong, because a
  *   structural read answers some questions (what exists, what's declared)
- *   even without reading every unit's body.
+ *   even without reading every unit's body. Only the literal boolean `true`
+ *   counts; a truthy non-boolean is treated as `false`.
+ * @returns 'thin' below a 0.15 sample ratio (or on invalid input), 'partial'
+ *   from 0.15 up, and 'strong' at or above 0.6 (or for any non-empty sample
+ *   of a pool of 30 or fewer units) but only with `hadStructuralReadAccess`.
  */
 export function coverageOf(
   sampledUnits: number,
@@ -253,6 +273,24 @@ export function coverageOf(
  *    it is 'likely'.
  * 6. Coverage is then applied as a ceiling: 'thin' coverage can never land
  *    on 'confirmed', regardless of how the signals otherwise line up.
+ *
+ * Independence is counted by `source`, not by array length: two `Signal`s
+ * with the same `source` (after folding whitespace, Unicode normalization,
+ * and — for http(s) URLs — the fragment, scheme/host case, default port and
+ * dot segments) count as one. Grading does not depend on the order of
+ * `signals`, and neither the input array nor its objects are modified;
+ * `result.signals` is a separate copy.
+ *
+ * @param signals - the evidence collected about the claim. May be empty.
+ * @param coverage - how much of the evidence pool these signals were drawn
+ *   from, typically from `coverageOf`.
+ * @returns the verdict, the counted distinct sources, and a copy of `signals`.
+ * @throws {TypeError} if `signals` is not an array of valid `Signal` objects
+ *   (a non-string, empty, or whitespace-only `source`; an unrecognized
+ *   `kind` or `vote`) or `coverage` is not `'strong' | 'partial' | 'thin'`.
+ *   This is a deliberate fail-closed check: a value the type system would
+ *   have rejected (e.g. from an untyped caller or a bad cast) must not be
+ *   silently misgraded.
  */
 export function corroborate(signals: Signal[], coverage: Coverage): Corroboration {
   assertValidInput(signals, coverage)
