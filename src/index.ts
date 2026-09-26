@@ -178,10 +178,22 @@ const COVERAGE_LABEL: Record<Coverage, string> = {
 }
 
 /** Human-readable label for a verdict. */
-export const verdictLabel = (v: Verdict): string => VERDICT_LABEL[v]
+export function verdictLabel(v: Verdict): string {
+  // hasOwn, not a bare lookup: 'constructor' or '__proto__' from an untyped
+  // caller would otherwise return an inherited function or object.
+  if (!Object.hasOwn(VERDICT_LABEL, v)) {
+    throw new TypeError(`corroboration-kit: unknown verdict ${describeValue(v)}`)
+  }
+  return VERDICT_LABEL[v]
+}
 
 /** Human-readable label for a coverage level. */
-export const coverageLabel = (c: Coverage): string => COVERAGE_LABEL[c]
+export function coverageLabel(c: Coverage): string {
+  if (!Object.hasOwn(COVERAGE_LABEL, c)) {
+    throw new TypeError(`corroboration-kit: unknown coverage ${describeValue(c)}`)
+  }
+  return COVERAGE_LABEL[c]
+}
 
 /**
  * Classify how much of a total evidence pool was actually sampled.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { corroborate, coverageOf, type Coverage, type Signal } from './index.js'
+import { corroborate, coverageLabel, coverageOf, verdictLabel, type Coverage, type Signal, type Verdict } from './index.js'
 
 describe('corroborate', () => {
   it('does NOT confirm two textual-only supporting signals from different sources', () => {
@@ -514,5 +514,70 @@ describe('coverageOf boundaries', () => {
   it('feeds corroborate: a scan of nothing cannot confirm or refute, it is inconclusive', () => {
     const coverage = coverageOf(0, 10, true)
     expect(corroborate([], coverage).verdict).toBe('inconclusive')
+  })
+})
+
+describe('verdictLabel and coverageLabel', () => {
+  it('maps every verdict to its exact display label', () => {
+    expect(verdictLabel('confirmed')).toBe('confirmed')
+    expect(verdictLabel('likely')).toBe('likely')
+    expect(verdictLabel('mixed')).toBe('mixed signals')
+    expect(verdictLabel('not-found')).toBe('not found')
+    expect(verdictLabel('inconclusive')).toBe('inconclusive')
+  })
+
+  it('maps every coverage level to its exact display label', () => {
+    expect(coverageLabel('strong')).toBe('strong coverage')
+    expect(coverageLabel('partial')).toBe('partial coverage')
+    expect(coverageLabel('thin')).toBe('thin coverage')
+  })
+
+  it('gives every verdict and every coverage level its own distinct, non-empty label', () => {
+    const verdicts: Verdict[] = ['confirmed', 'likely', 'mixed', 'not-found', 'inconclusive']
+    const coverages: Coverage[] = ['strong', 'partial', 'thin']
+    expect(new Set(verdicts.map(verdictLabel)).size).toBe(verdicts.length)
+    expect(new Set(coverages.map(coverageLabel)).size).toBe(coverages.length)
+    for (const label of [...verdicts.map(verdictLabel), ...coverages.map(coverageLabel)]) {
+      expect(label.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('has a label for every verdict corroborate can return', () => {
+    const seen = new Set<Verdict>()
+    const kinds = ['textual', 'structural'] as const
+    const votes = ['supports', 'contradicts', 'inconclusive'] as const
+    for (const coverage of ['strong', 'partial', 'thin'] as const) {
+      for (const [source, kind, vote] of kinds.flatMap((k) => votes.map((v) => ['a', k, v] as const))) {
+        for (const [source2, kind2, vote2] of kinds.flatMap((k) => votes.map((v) => ['b', k, v] as const))) {
+          const r = corroborate(
+            [
+              { source, kind, vote, detail: 'd' },
+              { source: source2, kind: kind2, vote: vote2, detail: 'd' },
+            ],
+            coverage,
+          )
+          seen.add(r.verdict)
+          expect(typeof verdictLabel(r.verdict)).toBe('string')
+        }
+      }
+    }
+    expect([...seen].sort()).toEqual(['confirmed', 'inconclusive', 'likely', 'mixed', 'not-found'])
+  })
+
+  // Before this fix these returned an inherited function or object instead
+  // of a string, and 'bogus' returned undefined.
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty', 'bogus', 'Confirmed', ''])(
+    'throws a TypeError for the unknown value %j rather than returning a non-label',
+    (value) => {
+      expect(() => verdictLabel(value as Verdict)).toThrow(TypeError)
+      expect(() => coverageLabel(value as Coverage)).toThrow(TypeError)
+      expect(() => verdictLabel(value as Verdict)).toThrow(/unknown verdict/)
+      expect(() => coverageLabel(value as Coverage)).toThrow(/unknown coverage/)
+    },
+  )
+
+  it.each([[undefined], [null], [3], [{}]])('throws a TypeError for non-string %j', (value) => {
+    expect(() => verdictLabel(value as Verdict)).toThrow(TypeError)
+    expect(() => coverageLabel(value as Coverage)).toThrow(TypeError)
   })
 })
