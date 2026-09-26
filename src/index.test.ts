@@ -91,6 +91,49 @@ describe('corroborate', () => {
   })
 })
 
+describe('ordering independence', () => {
+  // Grading must depend only on the SET of signals, never their array order,
+  // since callers assemble signals from independent checks in no fixed order.
+  const shuffled = (arr: Signal[], seed: number): Signal[] => {
+    const out = [...arr]
+    let s = seed
+    for (let i = out.length - 1; i > 0; i--) {
+      s = (s * 1664525 + 1013904223) >>> 0
+      const j = s % (i + 1)
+      const a = out[i]
+      const b = out[j]
+      if (a && b) {
+        out[i] = b
+        out[j] = a
+      }
+    }
+    return out
+  }
+
+  it('gives the same verdict and counts for every permutation of one signal set', () => {
+    const signals: Signal[] = [
+      { source: 'article-a', kind: 'textual', vote: 'supports', detail: 'one' },
+      { source: 'schema', kind: 'structural', vote: 'supports', detail: 'two' },
+      { source: 'db-record', kind: 'declarative', vote: 'contradicts', detail: 'three' },
+      { source: 'article-a', kind: 'textual', vote: 'inconclusive', detail: 'four' },
+    ]
+    const baseline = corroborate(signals, 'strong')
+    for (let seed = 1; seed <= 30; seed++) {
+      const permuted = corroborate(shuffled(signals, seed), 'strong')
+      expect(permuted.verdict).toBe(baseline.verdict)
+      expect(permuted.supports).toBe(baseline.supports)
+      expect(permuted.contradicts).toBe(baseline.contradicts)
+    }
+  })
+
+  it('does not depend on which duplicate-source signal comes first', () => {
+    const a: Signal = { source: 'x', kind: 'textual', vote: 'supports', detail: 'first' }
+    const b: Signal = { source: 'x', kind: 'structural', vote: 'supports', detail: 'second' }
+    expect(corroborate([a, b], 'strong').verdict).toBe(corroborate([b, a], 'strong').verdict)
+    expect(corroborate([a, b], 'strong').supports).toBe(1)
+  })
+})
+
 describe('coverageOf', () => {
   it('treats an unknown or empty pool as thin', () => {
     expect(coverageOf(0, 0, true)).toBe('thin')
