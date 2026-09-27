@@ -85,8 +85,7 @@ result from a thin sample is `'inconclusive'`, not `'not-found'`, because you
 cannot prove a negative from a small sample.
 
 This library was extracted from a code-honesty scanner
-(LaunchPlanr's, a private project
-`corroborate.ts`, which grades findings about a codebase from signals like
+(`corroborate.ts` in LaunchPlanr, a private project, which grades findings about a codebase from signals like
 dependency manifests, sampled source files, and directory structure) into a
 standalone, domain-agnostic form. Nothing here is specific to code: the same
 five rules apply to grading a claim from news sources, a hypothesis from lab
