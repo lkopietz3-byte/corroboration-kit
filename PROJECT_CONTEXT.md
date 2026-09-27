@@ -6,7 +6,7 @@ Mapped on **2026-09-26** from connected GitHub, Vercel, and Supabase metadata. T
 
 - Repository: [lkopietz3-byte/corroboration-kit](https://github.com/lkopietz3-byte/corroboration-kit)
 - Purpose: A library that grades how well collected evidence signals corroborate a claim without overstating the inspected evidence.
-- GitHub visibility: **private**; default branch: **`main`**; archived: **no**.
+- GitHub visibility: **public**; default branch: **`main`**; archived: **no**.
 - Product stage, owner, production health, and GitHub protection/settings beyond the fields above: **not verified**.
 
 ## Starting points
