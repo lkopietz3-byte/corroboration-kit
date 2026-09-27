@@ -229,15 +229,40 @@ export function coverageLabel(c: Coverage): string {
  *   structural read answers some questions (what exists, what's declared)
  *   even without reading every unit's body. Only the literal boolean `true`
  *   counts; a truthy non-boolean is treated as `false`.
- * @returns 'thin' below a 0.15 sample ratio (or on invalid input), 'partial'
- *   from 0.15 up, and 'strong' at or above 0.6 (or for any non-empty sample
- *   of a pool of 30 or fewer units) but only with `hadStructuralReadAccess`.
+ * @returns 'thin' below a 0.15 sample ratio (or on an unusable count — NaN,
+ *   Infinity, zero, or a non-number), 'partial' from 0.15 up, and 'strong' at
+ *   or above 0.6 (or for any non-empty sample of a pool of 30 or fewer units)
+ *   but only with `hadStructuralReadAccess`.
+ * @throws {RangeError} if `sampledUnits` or `totalUnits` is a negative finite
+ *   number, or if `sampledUnits` is a finite number greater than a finite
+ *   `totalUnits`. Both describe an impossible scan (you cannot sample a
+ *   negative number of units, or more units than the pool contains) rather
+ *   than a legitimately thin one, and are almost always a caller bug —
+ *   arguments swapped, or a subtraction that went negative upstream. Failing
+ *   loudly here matches `corroborate`'s own fail-closed validation instead of
+ *   silently returning a coverage value that looks like ordinary output.
  */
 export function coverageOf(
   sampledUnits: number,
   totalUnits: number,
   hadStructuralReadAccess: boolean,
 ): Coverage {
+  // Reject an impossible relationship between two otherwise-real counts
+  // before anything else. NaN/Infinity are handled by isCount below instead
+  // of here: they mean "no usable count", not "an impossible count" (there's
+  // no well-defined comparison between NaN and another number).
+  if (Number.isFinite(sampledUnits) && sampledUnits < 0) {
+    throw new RangeError(`corroboration-kit: coverageOf: sampledUnits must not be negative, got ${sampledUnits}`)
+  }
+  if (Number.isFinite(totalUnits) && totalUnits < 0) {
+    throw new RangeError(`corroboration-kit: coverageOf: totalUnits must not be negative, got ${totalUnits}`)
+  }
+  if (Number.isFinite(sampledUnits) && Number.isFinite(totalUnits) && sampledUnits > totalUnits) {
+    throw new RangeError(
+      `corroboration-kit: coverageOf: sampledUnits (${sampledUnits}) cannot exceed totalUnits (${totalUnits}); ` +
+        'you cannot sample more of a pool than it contains',
+    )
+  }
   // A real, positive, finite count is required on both sides. Number.isFinite
   // rejects NaN, Infinity and non-numbers, which a plain `<= 0` check let
   // through (NaN or 0 sampled over a small pool was rated 'strong'/'partial').
