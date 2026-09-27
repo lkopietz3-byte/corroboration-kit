@@ -48,8 +48,10 @@ what this library's counting rules concluded, not an external certification.
 
 ## Release and rollback
 
-Not yet published to npm (0.1.0, install from GitHub). To cut a release:
-bump `version` in `package.json`, add a `CHANGELOG.md` entry, tag the commit.
-There is no published version to roll back yet; once one exists, rollback is
-`npm deprecate` on the bad version plus a new patch release — this package
-has no server component and no migration state to reverse.
+`npm run verify` (lint, typecheck, test, build, verify:package) runs
+automatically before publish via the `prepublishOnly` script. To cut a
+release: bump `version` in `package.json`, add a `CHANGELOG.md` entry, tag
+the commit, then `npm publish`. npm allows `npm unpublish` only within 72
+hours of publishing, so prefer publishing a fixed patch release over trying
+to unpublish a bad one — this package has no server component and no
+migration state to reverse either way.
