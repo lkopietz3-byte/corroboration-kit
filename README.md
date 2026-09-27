@@ -111,11 +111,11 @@ distinct evidence sources of more than one kind.
 
 ## Install
 
-This package has not been published to npm yet. Install it from GitHub:
-
 ```bash
-npm install github:lkopietz3-byte/corroboration-kit
+npm install corroboration-kit
 ```
+
+Or build from source: clone the repository and run `npm install && npm run build`.
 
 Zero runtime dependencies. ESM only, Node >= 20.
 
