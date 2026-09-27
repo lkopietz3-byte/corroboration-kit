@@ -117,7 +117,9 @@ npm install corroboration-kit
 
 Or build from source: clone the repository and run `npm install && npm run build`.
 
-Zero runtime dependencies. ESM only, Node >= 20.
+Zero runtime dependencies. ESM package, Node >= 20; CommonJS
+`require("corroboration-kit")` also works on Node versions that support
+`require(esm)` (>=20.19.0, >=22.12.0).
 
 ## API
 
@@ -214,9 +216,12 @@ files in a repo, documents in a corpus, records in a dataset, sources on a
 topic, whatever your evidence pool's unit is.
 
 - Both `sampledUnits` and `totalUnits` must be finite numbers greater than
-  0. Zero, negative, `NaN`, or infinite values are `'thin'` — you cannot
-  claim coverage for a sample that examined nothing, or over a pool whose
-  size isn't known.
+  0. Zero, `NaN`, or infinite values are `'thin'` — you cannot claim coverage
+  for a sample that examined nothing, or over a pool whose size isn't known.
+- A negative `sampledUnits`/`totalUnits`, or `sampledUnits` greater than
+  `totalUnits`, throws `RangeError` instead of returning `'thin'`: both
+  describe an impossible scan (a negative count, or sampling more than the
+  pool contains), almost always a caller bug rather than a real thin sample.
 - A small pool (`totalUnits <= 30`) with any valid sample, or a high sample
   ratio (`>= 0.6`), is `'strong'` — but only if `hadStructuralReadAccess` is
   exactly `true` (a truthy non-boolean does not count). A
@@ -278,6 +283,20 @@ is honest, correctly labeled, or actually independent in reality:
 - **Coverage is only as honest as `sampledUnits` and `totalUnits`.**
   `coverageOf` does the arithmetic correctly, but it cannot check that the
   caller's counts describe the evidence pool honestly.
+
+## Relationship to sibling kits
+
+- [`grounding-kit`](https://github.com/lkopietz3-byte/grounding-kit) checks
+  whether individual sentences in AI-generated text are backed by a citation;
+  `corroboration-kit` grades whether the evidence for a claim, once gathered,
+  is actually independent and sufficient. Use `grounding-kit` first to find
+  which sentences claim support, then `corroboration-kit` to grade the
+  quality of that support.
+- [`provenance-kit`](https://github.com/lkopietz3-byte/provenance-kit) tracks
+  where a piece of content or data came from; `corroboration-kit` grades
+  whether independent evidence backs a claim once you have it. The two don't
+  share code — a provenance record is one kind of `Signal` you can feed into
+  `corroborate`.
 
 ## Relationship to LaunchPlanr's `corroborate.ts`
 
