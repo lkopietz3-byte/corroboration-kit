@@ -16,10 +16,13 @@ assert.equal(coverageOf(14, 100, false), 'thin');
 assert.equal(coverageOf(1, 30, true), 'strong');
 // The same small pool without structural access caps at partial.
 assert.equal(coverageOf(1, 30, false), 'partial');
-// Zero, negative, or non-finite counts can never claim coverage.
+// Zero or non-finite counts can never claim coverage.
 assert.equal(coverageOf(0, 100, true), 'thin');
 assert.equal(coverageOf(Number.NaN, 100, true), 'thin');
-assert.equal(coverageOf(5, 0, true), 'thin');
+// Impossible input (sampled more than the pool, or a negative count) throws
+// instead of silently grading as 'thin' -- almost always a caller bug.
+assert.throws(() => coverageOf(5, 0, true), RangeError);
+assert.throws(() => coverageOf(-1, 100, true), RangeError);
 
 // --- corroborate: the independence, non-textual-gate, and coverage-ceiling rules ---
 

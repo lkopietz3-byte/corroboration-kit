@@ -5,9 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-27
+
+### Fixed
+
+- `coverageOf` returned an ordinary-looking coverage value (e.g. `'strong'`)
+  for impossible input — `sampledUnits` greater than `totalUnits`, or either
+  argument negative — instead of surfacing the caller bug. It now throws
+  `RangeError` for both cases, matching `corroborate`'s own fail-closed
+  validation. `NaN`/`Infinity` are unchanged (still `'thin'`: no usable
+  count, not an impossible one).
+- The shipped `.js.map` pointed at `../src/*.ts`, which isn't in the
+  published tarball. `tsconfig.build.json` now sets `inlineSources`, so the
+  map embeds the original source. `.d.ts.map` generation is turned off
+  instead of shipping `src/` (see README's "Install").
+
+### Added
+
+- CommonJS `require()` support: `package.json` `exports` now has a
+  `"default"` condition alongside `"import"`, so
+  `require("corroboration-kit")` works on Node versions that support
+  `require(esm)` (>=20.19.0, >=22.12.0). ESM `import` is unaffected.
+  `scripts/consumer-probe.cjs`, run by `verify-package.mjs`, guards it in CI.
+- A "Relationship to sibling kits" section in the README, cross-linking
+  `grounding-kit` and `provenance-kit`.
+
 ## [0.1.0] - 2026-09-27
 
-First release. Not yet published to npm; install from GitHub (see README).
+First release.
 
 ### Added
 

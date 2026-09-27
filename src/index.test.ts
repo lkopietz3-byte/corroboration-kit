@@ -137,7 +137,12 @@ describe('ordering independence', () => {
 describe('coverageOf', () => {
   it('treats an unknown or empty pool as thin', () => {
     expect(coverageOf(0, 0, true)).toBe('thin')
-    expect(coverageOf(5, -1, true)).toBe('thin')
+  })
+
+  it('rejects a negative totalUnits as impossible input, not a thin sample', () => {
+    // Before the fix, a negative totalUnits (e.g. from a subtraction gone
+    // wrong upstream) silently graded as 'thin' instead of surfacing the bug.
+    expect(() => coverageOf(5, -1, true)).toThrow(RangeError)
   })
 
   it('rates a small pool sampled almost whole as strong only with structural access', () => {
@@ -426,8 +431,6 @@ describe('coverageOf boundaries', () => {
       [0, 10, false],
       [0, 30, true],
       [0, 1, true],
-      [-5, 10, true],
-      [-0.5, 10, true],
       [Number.NaN, 10, true],
       [Number.NaN, 10, false],
       [Number.POSITIVE_INFINITY, 10, true],
@@ -437,8 +440,6 @@ describe('coverageOf boundaries', () => {
     })
 
     it.each([
-      [5, 0],
-      [5, -1],
       [5, Number.NaN],
       [5, Number.POSITIVE_INFINITY],
       [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
@@ -454,6 +455,40 @@ describe('coverageOf boundaries', () => {
       expect(loose(null, 10, true)).toBe('thin')
       expect(loose('5', '10', true)).toBe('thin')
       expect(loose(5, undefined, true)).toBe('thin')
+    })
+  })
+
+  describe('impossible input is rejected, not silently misgraded', () => {
+    // Before this fix, sampledUnits > totalUnits (or either being negative)
+    // fell through to the ratio math and returned an ordinary-looking
+    // coverage value (see git history: coverageOf(500, 100, true) was
+    // 'strong'), hiding what is almost always a caller bug — arguments
+    // swapped, or a subtraction that went negative upstream.
+    it.each([
+      [-5, 10],
+      [-0.5, 10],
+      [10, -5],
+      [-1, -1],
+      [500, 100],
+      [5, 0],
+      [1, 0],
+    ])('throws RangeError for sampled=%s, total=%s', (sampled, total) => {
+      expect(() => coverageOf(sampled, total, true)).toThrow(RangeError)
+      expect(() => coverageOf(sampled, total, false)).toThrow(RangeError)
+    })
+
+    it('names which argument is the problem', () => {
+      expect(() => coverageOf(-5, 10, true)).toThrow(/sampledUnits/)
+      expect(() => coverageOf(10, -5, true)).toThrow(/totalUnits/)
+      expect(() => coverageOf(500, 100, true)).toThrow(/cannot exceed/)
+    })
+
+    it('still treats NaN/Infinity as an unusable (thin) count rather than throwing', () => {
+      // These are "no usable count" (isCount rejects them below), not an
+      // impossible relationship between two otherwise-real counts.
+      expect(coverageOf(Number.NaN, 100, true)).toBe('thin')
+      expect(coverageOf(100, Number.NaN, true)).toBe('thin')
+      expect(coverageOf(Number.POSITIVE_INFINITY, 100, true)).toBe('thin')
     })
   })
 
@@ -480,9 +515,9 @@ describe('coverageOf boundaries', () => {
       expect(coverageOf(300, 300, false)).toBe('partial')
     })
 
-    it('treats more units sampled than exist as the whole pool', () => {
-      expect(coverageOf(500, 100, true)).toBe('strong')
-      expect(coverageOf(500, 100, false)).toBe('partial')
+    it('rejects sampling more units than the pool contains', () => {
+      expect(() => coverageOf(500, 100, true)).toThrow(RangeError)
+      expect(() => coverageOf(500, 100, false)).toThrow(RangeError)
     })
   })
 
@@ -519,7 +554,7 @@ describe('coverageOf boundaries', () => {
 
     it('never lowers coverage', () => {
       for (const total of [1, 5, 30, 31, 100, 1000]) {
-        for (const sampled of [0, 1, 2, 5, 15, 30, 60, 100, 600, 1000]) {
+        for (const sampled of [0, 1, 2, 5, 15, 30, 60, 100, 600, 1000].filter((s) => s <= total)) {
           expect(rank[coverageOf(sampled, total, true)]).toBeGreaterThanOrEqual(rank[coverageOf(sampled, total, false)])
         }
       }
@@ -530,7 +565,10 @@ describe('coverageOf boundaries', () => {
     for (const structural of [true, false]) {
       for (const total of [1, 2, 10, 30, 31, 32, 99, 100, 101, 400, 1000]) {
         let previous = 0
-        for (let sampled = 0; sampled <= total + 2; sampled++) {
+        // Sampling stops at `total`: sampling more than the pool contains is
+        // impossible input and rejected (see 'impossible input' describe
+        // block above), not a value to rank on this scale.
+        for (let sampled = 0; sampled <= total; sampled++) {
           const now = rank[coverageOf(sampled, total, structural)]
           // Coverage may only stay level or rise as the sample grows.
           expect(now).toBeGreaterThanOrEqual(previous)
@@ -540,10 +578,10 @@ describe('coverageOf boundaries', () => {
     }
   })
 
-  it('is deterministic and returns only the three coverage levels', () => {
+  it('is deterministic and returns only the three coverage levels, for every valid sampled/total pair', () => {
     const seen = new Set<Coverage>()
-    for (let total = -2; total <= 80; total++) {
-      for (let sampled = -2; sampled <= 90; sampled++) {
+    for (let total = 0; total <= 80; total++) {
+      for (let sampled = 0; sampled <= total; sampled++) {
         for (const structural of [true, false]) {
           const first = coverageOf(sampled, total, structural)
           expect(coverageOf(sampled, total, structural)).toBe(first)
@@ -552,6 +590,17 @@ describe('coverageOf boundaries', () => {
       }
     }
     expect([...seen].sort()).toEqual(['partial', 'strong', 'thin'])
+  })
+
+  it('deterministically rejects every negative or sampled-exceeds-total pair', () => {
+    for (let total = -5; total <= 5; total++) {
+      for (let sampled = -5; sampled <= 10; sampled++) {
+        if (sampled < 0 || total < 0 || sampled > total) {
+          expect(() => coverageOf(sampled, total, true)).toThrow(RangeError)
+          expect(() => coverageOf(sampled, total, true)).toThrow(RangeError)
+        }
+      }
+    }
   })
 
   it('feeds corroborate: a scan of nothing cannot confirm or refute, it is inconclusive', () => {
