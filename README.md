@@ -1,12 +1,14 @@
 # corroboration-kit
 
-A small, dependency-free grading function for one question: **given a set of
-evidence signals about a claim, how corroborated is it, honestly?**
+A small, dependency-free function for rule-based grading of caller-supplied
+signals about a claim, using caller-assigned source labels and coverage. Its
+`'confirmed'` verdict means the supplied signals passed those rules; it is
+not independent factual verification.
 
 It is not a fact-checker, a search engine, or a scoring model. It takes
 signals you already collected — from wherever you collect them — and applies
-a fixed set of rules for turning them into a verdict that doesn't overstate
-what you actually looked at.
+a fixed set of rules for turning them into a verdict bounded by the coverage
+you report.
 
 ```ts
 import { corroborate, coverageOf } from 'corroboration-kit'
