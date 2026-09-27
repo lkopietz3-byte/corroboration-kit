@@ -1,0 +1,8 @@
+{
+  "corroboration-kit": [
+    "corroborate",
+    "coverageLabel",
+    "coverageOf",
+    "verdictLabel"
+  ]
+}
