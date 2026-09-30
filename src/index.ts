@@ -136,13 +136,10 @@ function describeValue(value: unknown): string {
     return escapeForDisplay(JSON.stringify(value.length > 40 ? `${value.slice(0, 40)}...` : value))
   }
   if (value === null) return 'null'
-  if (typeof value === 'object') {
-    try {
-      return Array.isArray(value) ? 'an array' : 'object'
-    } catch {
-      // Array.isArray throws on a revoked Proxy; it is still just an object.
-      return 'object'
-    }
+  try {
+    if (Array.isArray(value)) return 'an array'
+  } catch {
+    // Array.isArray throws on a revoked Proxy, which is still just an object.
   }
   return typeof value
 }
@@ -164,7 +161,11 @@ function snapshotSignal(raw: object): Record<string, unknown> {
   for (const field of SIGNAL_FIELDS) {
     if (Object.hasOwn(copy, field)) continue
     const value: unknown = (raw as Record<string, unknown>)[field]
-    if (value !== undefined || field !== 'detail') copy[field] = value
+    // defineProperty, not assignment: an assignment would run a setter (or hit
+    // a read-only property) that someone put on Object.prototype.
+    if (value !== undefined || field !== 'detail') {
+      Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true })
+    }
   }
   return copy
 }

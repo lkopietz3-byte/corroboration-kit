@@ -103,6 +103,14 @@ describe('CK-001: each signal is read once, then validated, graded and returned 
     expect(result.supports).toBe(1)
     expect(result.signals).toEqual([{ source: 'a', kind: 'structural', vote: 'supports', detail: 'audit fixture' }])
     expect(corroborate(result.signals, 'strong')).toEqual(result)
+    // The copied fields are ordinary, editable data properties like any other.
+    for (const field of ['source', 'kind', 'vote', 'detail']) {
+      expect(Object.getOwnPropertyDescriptor(result.signals[0], field)).toMatchObject({
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      })
+    }
   })
 
   it('accepts a class instance whose fields are accessors on the prototype, and keeps them', () => {
@@ -130,6 +138,17 @@ describe('CK-001: each signal is read once, then validated, graded and returned 
     Object.defineProperty(hidden, 'kind', { value: 'structural', enumerable: false })
     const result = corroborate([hidden as unknown as Signal], 'strong')
     expect(result.signals[0]?.kind).toBe('structural')
+  })
+
+  it('never reads Object.prototype for a field the caller left out', () => {
+    Object.defineProperty(Object.prototype, 'kind', { value: 'structural', configurable: true })
+    try {
+      // A null-prototype signal has no kind anywhere; its copy must not find one on Object.prototype.
+      const missingKind = Object.assign(Object.create(null) as object, { source: 'a', vote: 'supports', detail: 'd' }) as Signal
+      expect(() => corroborate([missingKind], 'strong')).toThrow(/signals\[0\]\.kind must be one of/)
+    } finally {
+      delete (Object.prototype as unknown as Record<string, unknown>).kind
+    }
   })
 
   it('does not invent a detail field for a signal that has none', () => {
@@ -290,6 +309,9 @@ describe('class 8: error messages never carry raw control or bidi characters fro
       expect(message).toContain('\\u202e')
       expect(message).toContain('\\u001b')
       expect(message).toContain('\\u2028')
+      // Zero-padded to four hex digits, whatever the code point.
+      expect(message).toContain('\\u007f')
+      expect(message).toContain('\\u009b')
     }
   })
 
