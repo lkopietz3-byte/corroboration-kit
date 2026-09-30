@@ -28,7 +28,13 @@ const result = corroborate(
 // distinct sources and one is non-textual, which would otherwise be enough
 // to reach 'confirmed'. That's the coverage ceiling: a thin sample caps the
 // verdict no matter how the signals it did find line up.
+// result.direction is 'supports': both counted sources voted that way.
 ```
+
+Read `verdict` together with `direction`. `'confirmed'` is reachable on the
+contradicting side too, so `verdict: 'confirmed'` with `direction:
+'contradicts'` means the evidence **confirms the claim is false**, not that
+it is true. See [`Corroboration`](#corroboratesignals-signal-coverage-coverage-corroboration).
 
 ## Why this exists
 
@@ -104,10 +110,11 @@ distinct evidence sources of more than one kind.
 - You need stance or fact-level verification of what a source says, not just
   whether independent sources exist. A signal's `vote` is whatever the
   caller decided it means; this library does not read text or judge claims.
-- Your evidence only ever comes from one kind of check (e.g. only grep). The
-  non-textual gate means `'confirmed'` is then structurally unreachable —
-  which is the intended behavior, not a bug, but it means this tool won't do
-  anything for a single-signal-type pipeline beyond report `'likely'`.
+- Your evidence only ever comes from text matching (e.g. only grep or keyword
+  search). The non-textual gate means `'confirmed'` is then unreachable, which
+  is the intended behavior, not a bug: such a pipeline gets `'likely'` at
+  best. A pipeline whose signals are all one *non-textual* kind is not
+  affected: two distinct structural sources can be `'confirmed'`.
 
 ## Install
 
@@ -115,11 +122,22 @@ distinct evidence sources of more than one kind.
 npm install corroboration-kit
 ```
 
-Or build from source: clone the repository and run `npm install && npm run build`.
+Zero runtime dependencies. Ships TypeScript declarations. Or build from
+source: clone the repository and run `npm install && npm run build`.
 
-Zero runtime dependencies. ESM package, Node >= 20; CommonJS
-`require("corroboration-kit")` also works on Node versions that support
-`require(esm)` (>=20.19.0, >=22.12.0).
+It is an ESM package (`"type": "module"`). `import` is the supported way to
+load it. `require()` also works where Node can `require(esm)`:
+
+| How you load it | Node 20.19+ | Node 22.12+ | Node 24 and 26 | Older Node 20 or 22 |
+| --- | --- | --- | --- | --- |
+| `import { corroborate } from 'corroboration-kit'` | works | works | works | works |
+| `require('corroboration-kit')` | works | works | works | fails (no `require(esm)`); use `import()` |
+
+Recommended runtimes are Node 22 and 24 (LTS) and Node 26 (current). Node 20 is
+end-of-life. CI still runs the tests and the installed-package probes on Node
+20.19.0 and 22.12.0 (the `require(esm)` floors) to catch regressions, but that
+is compatibility testing, not a recommendation. `engines` in `package.json` is
+`>=20`.
 
 ## API
 
@@ -170,14 +188,31 @@ not any one signal.
 The core grading function.
 
 ```ts
+type Direction = 'supports' | 'contradicts' | 'mixed' | 'none'
+
 interface Corroboration {
   verdict: Verdict
+  direction: Direction // which way the counted sources point (see below)
   coverage: Coverage
-  signals: Signal[]
+  signals: Signal[]    // the snapshot that was graded
   supports: number     // distinct supporting SOURCES, not signal count
   contradicts: number  // distinct contradicting SOURCES, not signal count
 }
 ```
+
+`direction` is derived only from the two counts: `'supports'` when only
+supporting sources were counted, `'contradicts'` when only contradicting
+sources were counted, `'mixed'` when both were (exactly when `verdict` is
+`'mixed'`), and `'none'` when neither was (the verdict is then `'not-found'`
+or `'inconclusive'`). Signals voting `'inconclusive'` are not counted. It never
+changes the verdict.
+
+**`'confirmed'` with `direction: 'contradicts'` means the evidence confirms
+the claim is FALSE.** The bar for a confirmed contradiction is the same as
+for a confirmed support (2+ distinct sources, at least one non-textual), and
+the result is `verdict: 'confirmed'`, `supports: 0`, `contradicts: 2`. A
+consumer that shows only the verdict would read that as confirmation of the
+claim, so show the direction with it.
 
 Rules, applied in order:
 
@@ -197,16 +232,44 @@ Rules, applied in order:
    would-be `'confirmed'` to `'likely'`, full stop.
 
 Grading does not depend on the order of `signals`. Neither the `signals`
-array nor its objects are mutated; `result.signals` is a separate copy, so
-editing the input afterward (or editing the result) cannot make one
-disagree with the other.
+array nor its objects are mutated.
 
-`corroborate` throws `TypeError` if `signals` is not an array of valid
-`Signal` objects, or `coverage` is not one of the three `Coverage` values.
-This is deliberate: a value the type system would have caught (a typo like
-`kind: 'Textual'`, or `coverage: 'Thin'`) must fail loudly instead of being
-silently mis-graded — a wrong `kind` could otherwise unlock a false
-`'confirmed'`, and a wrong `coverage` could skip the thin-coverage ceiling.
+**Input is read once.** `corroborate` reads the array's length once and each
+element once, and copies each signal by reading each of its fields once (an
+own enumerable field, a non-enumerable one, and a field inherited from a
+prototype or a class getter all count). Validation, grading and
+`result.signals` all use that one copy, so a getter or proxy that answers
+differently on a later read cannot make the verdict disagree with the
+evidence in the result, and editing the input (or the result) afterward
+cannot make one disagree with the other. Each returned signal is a new plain
+object with ordinary data properties. Other own enumerable properties on a
+signal are copied along shallowly: a nested object stored in one is shared
+with the caller, not cloned.
+
+**What throws.** `corroborate` throws `TypeError` for any value the type
+system would have caught, so a typo cannot be silently mis-graded (a wrong
+`kind` could otherwise unlock a false `'confirmed'`, and a wrong `coverage`
+could skip the thin-coverage ceiling):
+
+| Input | Result |
+| --- | --- |
+| `signals` is not an array, or an element is not an object | `TypeError` naming the index |
+| a hole in `signals` (a sparse array, even if `Array.prototype` defines that index) | `TypeError` naming the index |
+| `source` is not a string, or shows nothing (see below) | `TypeError` |
+| `kind` or `vote` is not one of the listed literals | `TypeError` |
+| `coverage` is not `'strong'`, `'partial'` or `'thin'` | `TypeError` |
+| `detail` is anything at all | accepted and copied as read; it is free-form and never validated or graded |
+
+A `source` shows nothing when it is empty or made only of whitespace,
+control characters and invisible formatting characters (zero-width spaces and
+joiners, the soft hyphen, bidi controls such as U+061C and U+2066-2069,
+variation selectors). Visible text in any script, emoji, and visible text
+wrapped in bidi controls are accepted.
+
+Error messages describe the offending value without calling into it (no
+`toString`, `toJSON` or getter runs), cut a long string to 40 characters, and
+write control and bidi characters as visible escapes such as `\u001b`, so a
+message cannot forge a log line or send a terminal escape.
 
 ### `coverageOf(sampledUnits: number, totalUnits: number, hadStructuralReadAccess: boolean): Coverage`
 
@@ -235,9 +298,10 @@ topic, whatever your evidence pool's unit is.
 ### `verdictLabel(v: Verdict): string` / `coverageLabel(c: Coverage): string`
 
 Human-readable labels, for display. Both throw `TypeError` for any value
-outside the fixed `Verdict` / `Coverage` sets — including inherited-property
-names like `'constructor'` or `'__proto__'`, which a plain object lookup
-would otherwise have returned instead of a label.
+that is not one of the fixed `Verdict` / `Coverage` string literals. That
+includes inherited-property names like `'constructor'` or `'__proto__'`, and
+values that would only coerce to a valid string, such as `['confirmed']`, a
+boxed `new String('confirmed')` or an object with a `toString`.
 
 ## Design principles
 
@@ -266,12 +330,14 @@ is honest, correctly labeled, or actually independent in reality:
   few URL variations (see `Signal` above), but two different URLs that both
   happen to mirror the same underlying wire story, or two file paths that
   happen to be symlinks to the same file, are still counted as independent —
-  the library has no way to know that. The `README.md`'s own "Why this
-  exists" example (a claim confirmed 6/6 by real, distinct outlets that had
-  all copied one distorted detail) is a case this library's rules were built
-  to make impossible to *game with citation count*, but a caller still has to
-  supply an honestly-distinct `source` and an honestly-assigned `kind`, or
-  even this design can be defeated.
+  the library has no way to know that. The "Why this
+  exists" example (a text-only tool that confirmed all six distorted claims
+  in its benchmark because real coverage of the topic satisfied its
+  independence check) is a case where this library's non-textual gate keeps
+  citation count from being enough, but a caller still has to supply an
+  honestly-distinct `source` and an honestly-assigned `kind`, or even this
+  design can be defeated. Label a topic-level text match `'structural'` and
+  the same failure is back.
 - **It has no search, no fetch, no parsing, and does no stance detection of
   its own.** It never reads the claim's text, a source's content, or
   determines what a source actually says — `vote` is entirely the caller's
@@ -280,35 +346,47 @@ is honest, correctly labeled, or actually independent in reality:
   this library's bar for its counting rules," not "true" or "false" in any
   externally verifiable sense, and neither implies legal, scientific, or
   journalistic sign-off.
+- **`direction` reports the counted labels, not the truth.** It says which
+  way the sources you labeled `'supports'` or `'contradicts'` point. It does
+  not say the claim is true or false, and a `'confirmed'` verdict in either
+  direction is still a statement about this library's counting rules.
+- **Invisible characters inside a longer `source` still make it distinct.**
+  Only a `source` that shows nothing at all is rejected. `'a'` and
+  `'a\u200b'` are counted as two artifacts, which errs toward a false
+  "independent" (see the note on under-merging above), so canonicalize
+  sources before calling if your source strings can carry invisible
+  characters.
 - **Coverage is only as honest as `sampledUnits` and `totalUnits`.**
   `coverageOf` does the arithmetic correctly, but it cannot check that the
   caller's counts describe the evidence pool honestly.
 
 ## Relationship to sibling kits
 
-- [`grounding-kit`](https://github.com/lkopietz3-byte/grounding-kit) checks
-  whether individual sentences in AI-generated text are backed by a citation;
-  `corroboration-kit` grades whether the evidence for a claim, once gathered,
-  is actually independent and sufficient. Use `grounding-kit` first to find
-  which sentences claim support, then `corroboration-kit` to grade the
-  quality of that support.
-- [`provenance-kit`](https://github.com/lkopietz3-byte/provenance-kit) tracks
-  where a piece of content or data came from; `corroboration-kit` grades
-  whether independent evidence backs a claim once you have it. The two don't
-  share code — a provenance record is one kind of `Signal` you can feed into
-  `corroborate`.
+- [`grounding-kit`](https://github.com/lkopietz3-byte/grounding-kit) checks,
+  mechanically, that a citation marker in AI-generated text points at an
+  evidence span related to its sentence (its default matcher is word overlap,
+  not semantic entailment, and it does not judge whether the evidence is
+  true). `corroboration-kit` applies fixed counting rules to signals you have
+  already collected and labeled for a claim. Run `grounding-kit` first to find
+  which sentences claim support, then `corroboration-kit` if you want its rules
+  applied to the signals you gathered. The two share no code.
+- [`provenance-kit`](https://github.com/lkopietz3-byte/provenance-kit) labels
+  claims with an evidence tier and checks that public wording is not stronger
+  than the tier allows; it never looks at evidence and does not know about
+  corroboration verdicts or signals. The two are not integrated in code. A
+  `corroboration-kit` verdict could be one input to a person's decision about
+  which tier a claim is entitled to, and nothing more.
 
 ## Relationship to LaunchPlanr's `corroborate.ts`
 
 This is a from-scratch rewrite of the same five rules, not a re-export. The
-grading behavior for well-formed input is identical to the original (checked
-with a 200,000-case randomized differential test against the original
-source). What changed in extraction: input validation that throws on
-malformed `Signal`/`Coverage` values instead of silently mis-grading them,
-source-identity normalization (whitespace, Unicode, URL variants), and a
-`Corroboration.signals` result that is a snapshot copy rather than the
-caller's own array. None of those change the verdict for any input that was
-already well-formed.
+original is private and no comparison test against it ships in this
+repository, so this README does not claim the two agree on every input; the
+tests here pin the behavior of this package. What changed in extraction:
+input validation that throws on malformed `Signal`/`Coverage` values instead
+of silently mis-grading them, source-identity normalization (whitespace,
+Unicode, URL variants), and a `Corroboration.signals` result that is a
+snapshot copy rather than the caller's own array.
 
 ## License
 

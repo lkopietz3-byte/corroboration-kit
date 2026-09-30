@@ -19,6 +19,7 @@ const result = corroborate(
 );
 assert.equal(result.verdict, 'confirmed');
 assert.equal(result.supports, 2);
+assert.equal(result.direction, 'supports');
 assert.equal(verdictLabel('confirmed'), verdictLabel(result.verdict));
 assert.equal(typeof coverageLabel('strong'), 'string');
 

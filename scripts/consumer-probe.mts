@@ -10,6 +10,7 @@ import {
   verdictLabel,
   type Coverage,
   type Corroboration,
+  type Direction,
   type Signal,
   type SignalKind,
   type Vote,
@@ -30,6 +31,7 @@ const result: Corroboration = corroborate(signals, coverage)
 // The public shape of Corroboration must expose exactly these fields with
 // these types; a change here would fail to compile against the real .d.ts.
 const verdict: Verdict = result.verdict
+const direction: Direction = result.direction
 const echoedCoverage: Coverage = result.coverage
 const graded: Signal[] = result.signals
 const supports: number = result.supports
@@ -44,4 +46,4 @@ const firstSource: string = graded[0]?.source ?? verdictText
 
 // Reference every value so an unused-variable strict check cannot fail this
 // probe for a reason unrelated to the package's public types.
-void [coverage, verdict, echoedCoverage, supports, contradicts, coverageText, firstSource]
+void [coverage, verdict, direction, echoedCoverage, supports, contradicts, coverageText, firstSource]
