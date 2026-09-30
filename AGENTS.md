@@ -22,3 +22,13 @@ A domain-agnostic evidence-corroboration grader: distinct-source independence, a
 - Do not run `npm publish` or push tags without explicit permission. Treat any claim that a version is published as Reported until the registry confirms it.
 - Runtime `dependencies` stay empty; add dev tooling only.
 - Keep unrelated uncommitted work intact; never stage or reset the whole tree.
+
+## Review preparation
+
+See [docs/REVIEW_READINESS.md](docs/REVIEW_READINESS.md) for milestone review cadence, declared verification gates and the next launch-preparation task.
+
+## Code Review Rules
+
+- Count independence by normalized source artifact, not the number of signals. Preserve the documented whitespace, Unicode and selected URL normalization so the same source counts once.
+- Preserve the symmetric confirmed gate: at least two distinct sources and one non-textual signal are required. Disagreement stays mixed; confirmed with direction contradicts means the claim is contradicted.
+- Keep coverage as a verdict ceiling: thin coverage cannot confirm, and no counted evidence is inconclusive under thin coverage but not-found otherwise. Invalid labels fail closed, and caller-supplied labels are not independent verification.
