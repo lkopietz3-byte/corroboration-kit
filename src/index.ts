@@ -61,15 +61,17 @@ export type Direction = 'supports' | 'contradicts' | 'mixed' | 'none'
 export interface Signal {
   /** The distinct source artifact this signal was read from. Two signals
    * with the same `source` count as ONE independent source, however many
-   * of them there are. Must be a non-empty string after trimming whitespace;
-   * `corroborate` throws `TypeError` otherwise. */
+   * of them there are. Must be a string that shows something: not empty and
+   * not made only of whitespace, control characters or invisible formatting
+   * characters. `corroborate` throws `TypeError` otherwise. */
   source: string
   /** The evidence type, assigned by the caller. Only non-'textual' kinds
    * can unlock a 'confirmed' verdict — see the module doc comment. */
   kind: SignalKind
   /** What this signal concluded: for the claim, against it, or neither. */
   vote: Vote
-  /** Free-form, human-readable explanation of what this signal found. */
+  /** Free-form, human-readable explanation of what this signal found. It is
+   * never validated or graded; `corroborate` copies it as read. */
   detail: string
 }
 
@@ -91,10 +93,12 @@ export interface Corroboration {
   direction: Direction
   /** The `coverage` value passed in, echoed back for convenience. */
   coverage: Coverage
-  /** A copy of the input signals, in the order they were passed. This is a
-   * snapshot: it is a different array (and different objects) from whatever
-   * was passed to `corroborate`, so mutating either side afterward cannot
-   * make a result disagree with the input it was graded from, or vice versa. */
+  /** The signals that were graded, in the order they were passed. This is a
+   * snapshot taken by reading each signal once: it is a different array (and
+   * different objects) from whatever was passed to `corroborate`, so mutating
+   * either side afterward cannot make a result disagree with the input it was
+   * graded from, or vice versa. Each signal is a plain object whose fields
+   * (including inherited ones) are ordinary data properties. */
   signals: Signal[]
   /** Count of DISTINCT sources that voted 'supports'. */
   supports: number
@@ -401,19 +405,33 @@ export function coverageOf(
  * with the same `source` (after folding whitespace, Unicode normalization,
  * and — for http(s) URLs — the fragment, scheme/host case, default port and
  * dot segments) count as one. Grading does not depend on the order of
- * `signals`, and neither the input array nor its objects are modified;
- * `result.signals` is a separate copy.
+ * `signals`, and neither the input array nor its objects are modified.
+ *
+ * The input is read once. The array's length and each element are read once,
+ * and each signal's fields (own, non-enumerable, inherited, or getter-backed)
+ * are read once into a new plain object. Validation, grading and the returned
+ * `signals` all use those copies, so a getter or proxy that answers
+ * differently on a later read cannot make the verdict disagree with the
+ * returned evidence. Extra own enumerable properties are copied shallowly.
+ *
+ * `direction` in the result reports which way the counted sources point. A
+ * `'confirmed'` verdict with direction `'contradicts'` means the evidence
+ * confirms the claim is FALSE.
  *
  * @param signals - the evidence collected about the claim. May be empty.
  * @param coverage - how much of the evidence pool these signals were drawn
  *   from, typically from `coverageOf`.
- * @returns the verdict, the counted distinct sources, and a copy of `signals`.
+ * @returns the verdict, its direction, the counted distinct sources, and the
+ *   snapshot of `signals` that was graded.
  * @throws {TypeError} if `signals` is not an array of valid `Signal` objects
- *   (a non-string, empty, or whitespace-only `source`; an unrecognized
- *   `kind` or `vote`) or `coverage` is not `'strong' | 'partial' | 'thin'`.
- *   This is a deliberate fail-closed check: a value the type system would
- *   have rejected (e.g. from an untyped caller or a bad cast) must not be
- *   silently misgraded.
+ *   (a hole in the array; a non-object element; a non-string `source`, or one
+ *   that is empty or shows nothing: whitespace, control and invisible
+ *   formatting characters only; an unrecognized `kind` or `vote`) or
+ *   `coverage` is not `'strong' | 'partial' | 'thin'`. `detail` is never
+ *   validated. This is a deliberate fail-closed check: a value the type
+ *   system would have rejected (e.g. from an untyped caller or a bad cast)
+ *   must not be silently misgraded. Error messages escape control and bidi
+ *   characters and never call into the offending value.
  */
 export function corroborate(signals: Signal[], coverage: Coverage): Corroboration {
   // One read of everything the caller gave us. From here on nothing touches
