@@ -14,6 +14,10 @@
 //   - The same bar is symmetric for the negative case: a confirmed CONTRADICTION
 //     also needs a non-textual signal, or it is downgraded to "likely".
 //   - Disagreement among signals is surfaced as "mixed", never averaged away.
+//   - The result says which way the counted evidence points (`direction`),
+//     because "confirmed" is also reachable on the contradicting side: a
+//     confirmed verdict with direction "contradicts" means the evidence
+//     confirms the claim is FALSE.
 //   - A null result is "not-found" only under adequate coverage. Under thin
 //     coverage it is "inconclusive" — you cannot prove a negative from a
 //     small sample of a large pool.
@@ -39,6 +43,12 @@ export type Coverage = 'strong' | 'partial' | 'thin'
 
 /** The final grade `corroborate` assigns to a claim. */
 export type Verdict = 'confirmed' | 'likely' | 'mixed' | 'not-found' | 'inconclusive'
+
+/** Which way the counted evidence points, independent of how strong the
+ * verdict is. `'supports'` and `'contradicts'` mean sources voted only that
+ * way, `'mixed'` means sources voted both ways, and `'none'` means no source
+ * voted either way (inconclusive votes are not counted). */
+export type Direction = 'supports' | 'contradicts' | 'mixed' | 'none'
 
 /** One piece of evidence bearing on a claim.
  *
@@ -66,8 +76,19 @@ export interface Signal {
 /** The result of grading a set of signals. */
 export interface Corroboration {
   /** The grade `corroborate` assigned. See `corroborate`'s doc comment for
-   * exactly how it is derived. */
+   * exactly how it is derived. Read it together with `direction`: the
+   * verdict grades how well the evidence meets the counting rules, not
+   * whether the claim is true, and `'confirmed'` can be reached by
+   * contradicting evidence. */
   verdict: Verdict
+  /** Which way the counted evidence points, derived only from `supports` and
+   * `contradicts`: `'supports'` (only supporting sources), `'contradicts'`
+   * (only contradicting sources), `'mixed'` (both, which is exactly when
+   * `verdict` is `'mixed'`) or `'none'` (neither, so `verdict` is
+   * `'not-found'` or `'inconclusive'`). A `'confirmed'` verdict with
+   * direction `'contradicts'` means the evidence confirms that the claim is
+   * FALSE, not that it is true. */
+  direction: Direction
   /** The `coverage` value passed in, echoed back for convenience. */
   coverage: Coverage
   /** A copy of the input signals, in the order they were passed. This is a
@@ -85,55 +106,126 @@ const SIGNAL_KINDS: readonly SignalKind[] = ['textual', 'structural', 'behaviora
 const VOTES: readonly Vote[] = ['supports', 'contradicts', 'inconclusive']
 const COVERAGES: readonly Coverage[] = ['strong', 'partial', 'thin']
 
-/** Render an untrusted value for an error message without dumping it whole. */
-function describeValue(value: unknown): string {
-  if (typeof value === 'string') {
-    return JSON.stringify(value.length > 40 ? `${value.slice(0, 40)}...` : value)
-  }
-  if (value === null) return 'null'
-  if (Array.isArray(value)) return 'an array'
-  return typeof value
+// A value that "shows nothing" to a reader: only whitespace, control
+// characters and Default_Ignorable_Code_Point characters (zero-width spaces
+// and joiners, the soft hyphen, the word joiner, every bidi control such as
+// U+061C and U+2066-2069, variation selectors, Hangul fillers). String.trim
+// alone misses the ignorable ones. Visible text in any script, emoji, and
+// visible text wrapped in bidi controls all still count as present.
+const BLANK = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Cc}]*$/u
+
+// Everything that could end a line, move the cursor, send a terminal escape or
+// reorder the text around it when a caller-supplied string is printed:
+// C0 and C1 controls and DEL (`\p{Cc}`), U+2028/2029, U+061C, U+200E/F,
+// U+202A-202E and U+2066-2069.
+const UNSAFE_FOR_DISPLAY = /[\p{Cc}\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu
+
+/** Replace each control or bidi formatting character with a visible `\uXXXX` escape. */
+function escapeForDisplay(text: string): string {
+  return text.replace(UNSAFE_FOR_DISPLAY, (ch) => `\\u${(ch.codePointAt(0) as number).toString(16).padStart(4, '0')}`)
 }
 
 /**
- * Fail closed on input the type system would have rejected. Without this a
+ * Render an untrusted value for an error message without dumping it whole.
+ * Never calls into the value (no `toString`, `toJSON` or getters), so building
+ * a message cannot throw, and escapes control and bidi characters in strings
+ * so a message cannot forge a log line or send a terminal escape.
+ */
+function describeValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return escapeForDisplay(JSON.stringify(value.length > 40 ? `${value.slice(0, 40)}...` : value))
+  }
+  if (value === null) return 'null'
+  if (typeof value === 'object') {
+    try {
+      return Array.isArray(value) ? 'an array' : 'object'
+    } catch {
+      // Array.isArray throws on a revoked Proxy; it is still just an object.
+      return 'object'
+    }
+  }
+  return typeof value
+}
+
+const SIGNAL_FIELDS = ['source', 'kind', 'vote', 'detail'] as const
+
+/**
+ * Copy one caller signal, reading each of its fields exactly once.
+ *
+ * The spread reads every own enumerable field once (a getter runs once). A
+ * field the spread did not reach, an inherited one or a non-enumerable own
+ * one, is read once here and stored on the copy as plain data. The three
+ * required fields are always stored, so validation reads only the copy's own
+ * properties and never the prototype chain. `detail` is stored only when it
+ * has a value, so a signal without one does not gain an `undefined` field.
+ */
+function snapshotSignal(raw: object): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...raw }
+  for (const field of SIGNAL_FIELDS) {
+    if (Object.hasOwn(copy, field)) continue
+    const value: unknown = (raw as Record<string, unknown>)[field]
+    if (value !== undefined || field !== 'detail') copy[field] = value
+  }
+  return copy
+}
+
+/** Throw a TypeError unless the snapshotted signal at `index` is well formed. */
+function assertValidSignal(copy: Record<string, unknown>, index: number): void {
+  const { source, kind, vote } = copy
+  if (typeof source !== 'string') {
+    throw new TypeError(`corroboration-kit: signals[${index}].source must be a string, got ${describeValue(source)}`)
+  }
+  if (BLANK.test(source)) {
+    throw new TypeError(
+      `corroboration-kit: signals[${index}].source must not be empty or show nothing (whitespace and invisible characters only); a signal with no identifiable artifact cannot be counted as independent`,
+    )
+  }
+  if (!SIGNAL_KINDS.includes(kind as SignalKind)) {
+    throw new TypeError(
+      `corroboration-kit: signals[${index}].kind must be one of ${SIGNAL_KINDS.join(', ')}, got ${describeValue(kind)}`,
+    )
+  }
+  if (!VOTES.includes(vote as Vote)) {
+    throw new TypeError(
+      `corroboration-kit: signals[${index}].vote must be one of ${VOTES.join(', ')}, got ${describeValue(vote)}`,
+    )
+  }
+}
+
+/**
+ * Fail closed on input the type system would have rejected, and return the
+ * ONE snapshot the rest of `corroborate` works from. Without validation a
  * JavaScript caller (or a cast) could pass `kind: 'Textual'` and have it
  * counted as non-textual, or `coverage: 'Thin'` and skip the thin-coverage
  * ceiling, and get a 'confirmed' verdict out of it.
+ *
+ * One indexed traversal reads `length` once and each element once, refuses a
+ * hole (an inherited index does not fill one), copies each signal with
+ * `snapshotSignal`, and validates that copy. Validation, grading and the
+ * returned `signals` all use these copies, never the caller's objects again.
  */
-function assertValidInput(signals: unknown, coverage: unknown): asserts signals is Signal[] {
+function snapshotAndValidate(signals: unknown, coverage: unknown): Signal[] {
   if (!Array.isArray(signals)) {
     throw new TypeError(`corroboration-kit: signals must be an array of Signal objects, got ${describeValue(signals)}`)
   }
-  // Index loop, not forEach: forEach would silently skip holes in a sparse array.
-  for (let i = 0; i < signals.length; i++) {
-    const s: unknown = signals[i]
-    if (typeof s !== 'object' || s === null) {
-      throw new TypeError(`corroboration-kit: signals[${i}] must be a Signal object, got ${describeValue(s)}`)
+  const length: number = signals.length
+  const copies: Record<string, unknown>[] = []
+  for (let i = 0; i < length; i++) {
+    if (!Object.hasOwn(signals, i)) {
+      throw new TypeError(`corroboration-kit: signals[${i}] must be a Signal object, but the array has a hole there`)
     }
-    const { source, kind, vote } = s as Record<string, unknown>
-    if (typeof source !== 'string') {
-      throw new TypeError(`corroboration-kit: signals[${i}].source must be a string, got ${describeValue(source)}`)
+    const raw: unknown = signals[i]
+    if (typeof raw !== 'object' || raw === null) {
+      throw new TypeError(`corroboration-kit: signals[${i}] must be a Signal object, got ${describeValue(raw)}`)
     }
-    if (source.trim() === '') {
-      throw new TypeError(
-        `corroboration-kit: signals[${i}].source must not be empty; a signal with no identifiable artifact cannot be counted as independent`,
-      )
-    }
-    if (!SIGNAL_KINDS.includes(kind as SignalKind)) {
-      throw new TypeError(
-        `corroboration-kit: signals[${i}].kind must be one of ${SIGNAL_KINDS.join(', ')}, got ${describeValue(kind)}`,
-      )
-    }
-    if (!VOTES.includes(vote as Vote)) {
-      throw new TypeError(
-        `corroboration-kit: signals[${i}].vote must be one of ${VOTES.join(', ')}, got ${describeValue(vote)}`,
-      )
-    }
+    const copy = snapshotSignal(raw)
+    assertValidSignal(copy, i)
+    copies.push(copy)
   }
   if (!COVERAGES.includes(coverage as Coverage)) {
     throw new TypeError(`corroboration-kit: coverage must be one of ${COVERAGES.join(', ')}, got ${describeValue(coverage)}`)
   }
+  return copies as unknown as Signal[]
 }
 
 // The build targets ES2022 with no DOM or Node type packages, so the WHATWG
@@ -187,12 +279,16 @@ const COVERAGE_LABEL: Record<Coverage, string> = {
 
 /**
  * Human-readable label for a verdict, e.g. `'mixed'` -> `'mixed signals'`.
- * @throws {TypeError} for any value other than the five `Verdict` literals.
+ * @throws {TypeError} for any value other than the five `Verdict` literals,
+ *   including a non-string that would coerce to one (`['confirmed']`, a boxed
+ *   `String`, an object with a `toString`).
  */
 export function verdictLabel(v: Verdict): string {
+  // A primitive string first: hasOwn coerces its key, so an array, a boxed
+  // string or an object with a toString would otherwise pass as its text.
   // hasOwn, not a bare lookup: 'constructor' or '__proto__' from an untyped
   // caller would otherwise return an inherited function or object.
-  if (!Object.hasOwn(VERDICT_LABEL, v)) {
+  if (typeof v !== 'string' || !Object.hasOwn(VERDICT_LABEL, v)) {
     throw new TypeError(`corroboration-kit: unknown verdict ${describeValue(v)}`)
   }
   return VERDICT_LABEL[v]
@@ -200,10 +296,11 @@ export function verdictLabel(v: Verdict): string {
 
 /**
  * Human-readable label for a coverage level, e.g. `'thin'` -> `'thin coverage'`.
- * @throws {TypeError} for any value other than the three `Coverage` literals.
+ * @throws {TypeError} for any value other than the three `Coverage` literals,
+ *   including a non-string that would coerce to one.
  */
 export function coverageLabel(c: Coverage): string {
-  if (!Object.hasOwn(COVERAGE_LABEL, c)) {
+  if (typeof c !== 'string' || !Object.hasOwn(COVERAGE_LABEL, c)) {
     throw new TypeError(`corroboration-kit: unknown coverage ${describeValue(c)}`)
   }
   return COVERAGE_LABEL[c]
@@ -318,14 +415,18 @@ export function coverageOf(
  *   silently misgraded.
  */
 export function corroborate(signals: Signal[], coverage: Coverage): Corroboration {
-  assertValidInput(signals, coverage)
+  // One read of everything the caller gave us. From here on nothing touches
+  // `signals` or its objects again: the same copies are validated, counted and
+  // returned, so a getter or proxy that answers differently on a later read
+  // cannot make the verdict disagree with the evidence in the result.
+  const snapshot = snapshotAndValidate(signals, coverage)
   // Distinct artifacts per vote, and whether any signal on that side is
   // non-textual. Keys are strings in a Set, so '__proto__' is an ordinary id.
   const supporting = new Set<string>()
   const contradicting = new Set<string>()
   let nonTextualSupport = false
   let nonTextualContradiction = false
-  for (const s of signals) {
+  for (const s of snapshot) {
     if (s.vote === 'supports') {
       supporting.add(sourceKey(s.source))
       if (s.kind !== 'textual') nonTextualSupport = true
@@ -355,8 +456,10 @@ export function corroborate(signals: Signal[], coverage: Coverage): Corroboratio
   // never be reported as "confirmed", no matter how the signals line up.
   if (coverage === 'thin' && verdict === 'confirmed') verdict = 'likely'
 
-  // A snapshot, not the caller's array: counts and verdict describe the
-  // signals as they were graded, so later edits to the input must not be able
-  // to make `result.signals` disagree with them.
-  return { verdict, coverage, signals: signals.map((s) => ({ ...s })), supports, contradicts }
+  // Derived from the counted sources only, so a 'confirmed' that rests on
+  // contradicting evidence is never mistaken for confirmation of the claim.
+  const direction: Direction =
+    supports > 0 && contradicts > 0 ? 'mixed' : supports > 0 ? 'supports' : contradicts > 0 ? 'contradicts' : 'none'
+
+  return { verdict, direction, coverage, signals: snapshot, supports, contradicts }
 }
