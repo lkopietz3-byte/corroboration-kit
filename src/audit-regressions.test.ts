@@ -269,6 +269,12 @@ describe('class 7: a source that shows nothing is rejected', () => {
     ['a NUL control', '\u0000'],
     ['a C1 control', '\u009b'],
     ['whitespace around an invisible character', '  \u200b  '],
+    ['an interlinear annotation anchor (format character U+FFF9)', '\ufff9'],
+    ['all three interlinear annotation characters', '\ufff9\ufffa\ufffb'],
+    ['a language tag character (format character U+E0001)', '\u{e0001}'],
+    ['an invisible times operator (format character U+2062)', '\u2062'],
+    ['a braille blank', '\u2800'],
+    ['braille blanks mixed with spaces and a zero-width space', ' \u2800\u2800 \u200b'],
   ])('rejects a source made only of %s', (_name, source) => {
     expect(() => corroborate([sig(source, 'structural', 'supports')], 'strong')).toThrow(TypeError)
     expect(() => corroborate([sig(source, 'structural', 'supports')], 'strong')).toThrow(/signals\[0\]\.source must not be empty/)
@@ -281,6 +287,14 @@ describe('class 7: a source that shows nothing is rejected', () => {
     ['Japanese', '日本語'],
     ['an emoji', '😀'],
     ['a visible character between invisible ones', '\u200bx\u200b'],
+    ['an emoji sequence joined with ZWJ', '\u{1f468}\u200d\u{1f469}\u200d\u{1f467}'],
+    ['an emoji flag built from tag characters', '\u{1f3f4}\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}'],
+    ['Arabic wrapped in an isolate', '\u2067\u0627\u0644\u0639\u0631\u0628\u064a\u0629\u2069'],
+    ['Hebrew wrapped in embedding controls', '\u202b\u05e2\u05d1\u05e8\u05d9\u05ea\u202c'],
+    ['an Arabic number sign before a digit', '\u0600\u0661'],
+    ['Japanese with a zero-width joiner', '\u65e5\u200d\u672c\u8a9e'],
+    ['a braille pattern with dots', '\u2801'],
+    ['a braille blank next to a letter', '\u2800a\u2800'],
   ])('accepts %s', (_name, source) => {
     expect(corroborate([sig(source, 'structural', 'supports')], 'strong').supports).toBe(1)
   })

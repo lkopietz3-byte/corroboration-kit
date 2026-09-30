@@ -27,7 +27,9 @@ type, `Direction`) and no runtime dependencies.
 - **A `source` that shows nothing is rejected.** A source made only of
   whitespace, control characters and invisible formatting characters
   (zero-width spaces and joiners, the soft hyphen, U+061C, the isolate
-  controls U+2066-2069, variation selectors, Hangul fillers) now throws a
+  controls U+2066-2069, variation selectors, Hangul fillers, every Unicode
+  `Cf` format character such as the interlinear annotation anchor U+FFF9) or
+  the braille blank U+2800 now throws a
   `TypeError`, like an empty one. Before, `'\u200b'` passed and could be
   counted as an artifact with no visible name. Visible text in any script,
   emoji and bidi-wrapped visible text are unchanged.

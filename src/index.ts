@@ -62,8 +62,8 @@ export interface Signal {
   /** The distinct source artifact this signal was read from. Two signals
    * with the same `source` count as ONE independent source, however many
    * of them there are. Must be a string that shows something: not empty and
-   * not made only of whitespace, control characters or invisible formatting
-   * characters. `corroborate` throws `TypeError` otherwise. */
+   * not made only of whitespace, control characters, invisible formatting
+   * characters or the braille blank. `corroborate` throws `TypeError` otherwise. */
   source: string
   /** The evidence type, assigned by the caller. Only non-'textual' kinds
    * can unlock a 'confirmed' verdict — see the module doc comment. */
@@ -111,12 +111,15 @@ const VOTES: readonly Vote[] = ['supports', 'contradicts', 'inconclusive']
 const COVERAGES: readonly Coverage[] = ['strong', 'partial', 'thin']
 
 // A value that "shows nothing" to a reader: only whitespace, control
-// characters and Default_Ignorable_Code_Point characters (zero-width spaces
-// and joiners, the soft hyphen, the word joiner, every bidi control such as
-// U+061C and U+2066-2069, variation selectors, Hangul fillers). String.trim
-// alone misses the ignorable ones. Visible text in any script, emoji, and
-// visible text wrapped in bidi controls all still count as present.
-const BLANK = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Cc}]*$/u
+// characters, Default_Ignorable_Code_Point characters (zero-width spaces and
+// joiners, the soft hyphen, the word joiner, every bidi control such as
+// U+061C and U+2066-2069, variation selectors, Hangul fillers), the rest of
+// the Cf format characters (for example the interlinear annotation anchors
+// U+FFF9-FFFB) and the braille blank U+2800, which has no dots. String.trim
+// alone misses all of these. Visible text in any script, emoji (including ZWJ
+// sequences), and visible text wrapped in bidi controls all still count as
+// present, because one visible character is enough.
+const BLANK = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Cc}\p{Cf}\u2800]*$/u
 
 // Everything that could end a line, move the cursor, send a terminal escape or
 // reorder the text around it when a caller-supplied string is printed:
@@ -425,8 +428,8 @@ export function coverageOf(
  *   snapshot of `signals` that was graded.
  * @throws {TypeError} if `signals` is not an array of valid `Signal` objects
  *   (a hole in the array; a non-object element; a non-string `source`, or one
- *   that is empty or shows nothing: whitespace, control and invisible
- *   formatting characters only; an unrecognized `kind` or `vote`) or
+ *   that is empty or shows nothing: whitespace, control, invisible
+ *   formatting characters and the braille blank only; an unrecognized `kind` or `vote`) or
  *   `coverage` is not `'strong' | 'partial' | 'thin'`. `detail` is never
  *   validated. This is a deliberate fail-closed check: a value the type
  *   system would have rejected (e.g. from an untyped caller or a bad cast)
