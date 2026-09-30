@@ -73,11 +73,57 @@ const result = corroborate(input, 'strong');
 input.push({ source: 'b', kind: 'structural', vote: 'supports', detail: 'd' });
 assert.equal(result.supports, 1);
 
+// --- direction: a confirmed verdict can be a confirmed contradiction ------
+
+const confirmedContradiction = corroborate(
+  [
+    { source: 'article-a', kind: 'textual', vote: 'contradicts', detail: 'disputes the claim' },
+    { source: 'schema-dump', kind: 'structural', vote: 'contradicts', detail: 'field absent from schema' },
+  ],
+  'strong',
+);
+assert.equal(confirmedContradiction.verdict, 'confirmed');
+assert.equal(confirmedContradiction.supports, 0);
+assert.equal(confirmedContradiction.contradicts, 2);
+assert.equal(confirmedContradiction.direction, 'contradicts');
+assert.equal(withStructural.direction, 'supports');
+assert.equal(corroborate([], 'strong').direction, 'none');
+assert.equal(
+  corroborate(
+    [
+      { source: 'a', kind: 'structural', vote: 'supports', detail: 'd' },
+      { source: 'b', kind: 'structural', vote: 'contradicts', detail: 'd' },
+    ],
+    'strong',
+  ).direction,
+  'mixed',
+);
+
+// --- input is read once, and a source that shows nothing is rejected --------
+
+let kindReads = 0;
+const getterSignal = {
+  source: 'a',
+  get kind() {
+    kindReads += 1;
+    return kindReads === 1 ? 'structural' : 'textual';
+  },
+  vote: 'supports',
+  detail: 'd',
+};
+const once = corroborate([getterSignal, { source: 'b', kind: 'textual', vote: 'supports', detail: 'd' }], 'strong');
+assert.equal(kindReads, 1);
+assert.equal(once.verdict, 'confirmed');
+assert.equal(once.signals[0].kind, 'structural');
+assert.throws(() => corroborate([{ source: '\u200b', kind: 'structural', vote: 'supports', detail: 'd' }], 'strong'), TypeError);
+
 // --- labels -------------------------------------------------------------
 
 assert.equal(verdictLabel('mixed'), 'mixed signals');
 assert.equal(coverageLabel('thin'), 'thin coverage');
 assert.throws(() => verdictLabel('bogus'), TypeError);
 assert.throws(() => coverageLabel('bogus'), TypeError);
+assert.throws(() => verdictLabel(['confirmed']), TypeError);
+assert.throws(() => coverageLabel(new String('strong')), TypeError);
 
 console.log('consumer-probe.mjs: all assertions passed');

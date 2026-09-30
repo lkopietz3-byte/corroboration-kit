@@ -1,6 +1,6 @@
 {
   "name": "corroboration-kit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A domain-agnostic evidence-corroboration grader: distinct-source independence, a non-textual-signal gate for 'confirmed', a coverage ceiling, and disagreement surfaced as 'mixed' instead of averaged away.",
   "keywords": [
     "corroboration",
