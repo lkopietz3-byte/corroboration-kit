@@ -261,9 +261,10 @@ could skip the thin-coverage ceiling):
 | `detail` is anything at all | accepted and copied as read; it is free-form and never validated or graded |
 
 A `source` shows nothing when it is empty or made only of whitespace,
-control characters and invisible formatting characters (zero-width spaces and
+control characters, invisible formatting characters (zero-width spaces and
 joiners, the soft hyphen, bidi controls such as U+061C and U+2066-2069,
-variation selectors). Visible text in any script, emoji, and visible text
+variation selectors, the interlinear annotation characters U+FFF9-FFFB, every
+other Unicode `Cf` format character) and the braille blank U+2800. Visible text in any script, emoji, and visible text
 wrapped in bidi controls are accepted.
 
 Error messages describe the offending value without calling into it (no
