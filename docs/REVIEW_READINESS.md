@@ -1,6 +1,6 @@
 # Review and launch readiness
 
-Prepared September 30, 2026 against GitHub main `1b248f3d9781f4e6f1e8aba41c162bfd0a546bb8`. This is a preparation plan, not a completed product audit or marketing certification.
+Updated September 30, 2026 for the 0.2.0 follow-up against main `7174d70`. This is a preparation plan, not a completed product audit or marketing certification.
 
 ## Review cadence
 
@@ -8,11 +8,11 @@ Keep automatic code reviews off during preparation. Request one focused `@codex 
 
 When this repo enters sustained launch or customer-facing development, enable its repository setting individually with **All PRs / On PR open / Exhaustive Off**. Keep the personal automatic default and credit-funded reviews off. Inspect the first result before expanding cadence. Review guidance lives in the root [AGENTS.md](../AGENTS.md); it supplements existing tests and release requirements.
 
-On September 30, 2026, this repository was verified to **Follow personal preferences**, with personal automatic code reviews, exhaustive reviews and credit-funded reviews off. These settings are managed in ChatGPT; this file does not activate them.
+Before changing review automation, inspect the current repository and personal settings in ChatGPT. This document does not activate or verify those settings.
 
 ## Next preparation task
 
-At the next release milestone, capture an installed-consumer example showing a repeated source, thin coverage and confirmed contradiction. Keep the coverage and caller-label limits beside the verdict.
+For the next candidate after 0.2.0, capture an installed-consumer example showing a repeated source, thin coverage and confirmed contradiction. Keep the coverage and caller-label limits beside the verdict.
 
 Finish condition: The example uses the real packed API, demonstrates source deduplication and the expected verdict/direction, and avoids claiming externally verified source independence.
 
