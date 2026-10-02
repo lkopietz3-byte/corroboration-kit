@@ -1,5 +1,7 @@
 # corroboration-kit
 
+**[Try it in your browser →](https://lkopietz3-byte.github.io/honesty-kits/#corroboration-kit)** · Part of [honesty kits](https://github.com/lkopietz3-byte/honesty-kits), a family of small checks for the claims an AI product makes.
+
 A small, dependency-free function for rule-based grading of caller-supplied
 signals about a claim, using caller-assigned source labels and coverage. Its
 `'confirmed'` verdict means the supplied signals passed those rules; it is
