@@ -1,6 +1,6 @@
 {
   "name": "corroboration-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A domain-agnostic evidence-corroboration grader: distinct-source independence, a non-textual-signal gate for 'confirmed', a coverage ceiling, and disagreement surfaced as 'mixed' instead of averaged away.",
   "keywords": [
     "corroboration",
@@ -9,7 +9,8 @@
     "confidence",
     "fact-checking",
     "grading",
-    "typescript"
+    "typescript",
+    "honesty-kits"
   ],
   "author": "Lucas Kopietz",
   "license": "MIT",
@@ -17,7 +18,7 @@
     "type": "git",
     "url": "git+https://github.com/lkopietz3-byte/corroboration-kit.git"
   },
-  "homepage": "https://github.com/lkopietz3-byte/corroboration-kit#readme",
+  "homepage": "https://lkopietz3-byte.github.io/honesty-kits/#corroboration-kit",
   "bugs": {
     "url": "https://github.com/lkopietz3-byte/corroboration-kit/issues"
   },
