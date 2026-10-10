@@ -448,7 +448,7 @@ export function coverageOf(
  *
  * Independence is counted by `source`, not by array length: two `Signal`s
  * with the same `source` (after folding whitespace, Unicode normalization,
- * and — for http(s) URLs — the fragment, scheme/host case, a trailing host
+ * and, for http(s) URLs, the fragment, scheme/host case, a trailing host
  * dot, default port, dot segments, an empty query and percent-escape hex
  * case) count as one. Dropping the fragment merges hash-routed pages. Grading does not depend on the order of
  * `signals`, and neither the input array nor its objects are modified.
