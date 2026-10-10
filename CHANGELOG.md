@@ -5,6 +5,63 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **One page no longer counts as several sources through URL spelling.** For
+  `http(s)://` sources, these now fold into one identity: the letter case of a
+  percent escape (`%c3%a9` and `%C3%A9`), a trailing dot on the host
+  (`a.example.` and `a.example`), and an empty query (`x?` and `x`). Before,
+  each pair counted as two independent sources, so citing one page twice under
+  two spellings could reach `'confirmed'`. Explicit default ports, which the
+  README already listed, are pinned by tests.
+- **More strings are rejected as "shows nothing".** A `source` made only of
+  U+FFFC, private-use code points, unassigned code points (including the
+  noncharacters) or combining marks with no base character now throws
+  `TypeError`, like the other invisible characters. Before, two such strings
+  (for example U+E000 and U+E001) counted as two independent sources.
+- `coverageOf` documentation (README and TSDoc) now matches the code: a small
+  pool or a ratio of 0.6 or more is `'strong'` with structural read access and
+  `'partial'` without it. The code did not change.
+
+### Changed (behavior)
+
+- Source identity: the three URL folds above. Sources that differed only in
+  percent-escape hex case, a trailing host dot or an empty query used to count
+  as two; they now count as one, so a verdict that relied on that can drop
+  from `'confirmed'` to `'likely'`. Nothing else about URL identity changed:
+  path case, a trailing slash, a query with content, a non-default port,
+  `%2F` versus `/`, and `%41` versus `A` stay distinct.
+- Validation: a `source` that is only U+FFFC, private-use, unassigned or
+  base-less combining characters is rejected (see Fixed). A letter next to
+  any of them is still accepted.
+- `tsconfig.json` now includes `test/` so the verdict table is type-checked
+  and linted; the build still compiles only `src/`.
+
+### Documented
+
+- The fragment is dropped on every `http(s)://` URL, so hash-routed
+  single-page app pages (`#/inbox`) and line anchors (`#L10`) fold into one
+  source. The README now says so and gives a workaround.
+- `coverageOf` has a cliff at 30 units: `coverageOf(1, 30, true)` is
+  `'strong'` and `coverageOf(1, 31, true)` is `'thin'`, so a very small sample
+  of a small pool can reach `'confirmed'`. The README states the exact
+  boundary and shows a caller-side floor. No option was added and defaults are
+  unchanged.
+- The non-textual signal that unlocks `'confirmed'` may come from any counted
+  source on that side, including one that also has a textual signal.
+- A single textual contradiction turns a supported claim into `'mixed'` even
+  though a textual signal can never confirm. This asymmetry is by design.
+- Lone surrogates and U+FFFD are still accepted as sources.
+
+### Added
+
+- `test/verdict-table.test.ts`: a named verdict regression table (source
+  identity, the non-textual gate, blank sources, `coverageOf`, README
+  examples) and a seeded 15,000-case fuzz checked against an independent
+  oracle.
+
 ## [0.2.1] - 2026-10-07
 
 No change to the library's behavior or API.

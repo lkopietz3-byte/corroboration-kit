@@ -163,11 +163,30 @@ interface Signal {
   strings are folded into the same identity when the only difference is
   surrounding whitespace, Unicode normalization (NFC vs NFD — how macOS and
   Linux can spell the same accented file name differently), or, for an
-  `http(s)://` URL, the fragment, the case of the scheme or host, an
-  explicit default port, or `.`/`..` path segments. Everything else —
-  including path case, a trailing slash, and a query string — is kept
-  distinct, because it can name a different artifact. `source` must be a
-  non-empty string once trimmed; `corroborate` throws `TypeError` otherwise.
+  `http(s)://` URL, one of these:
+
+  | Folded (one source) | Example |
+  | --- | --- |
+  | the fragment | `https://a.example/doc#s1` and `https://a.example/doc#s2` |
+  | scheme and host case | `HTTPS://A.Example/x` and `https://a.example/x` |
+  | a trailing dot on the host (the DNS root label) | `https://a.example./x` and `https://a.example/x` |
+  | an explicit default port | `https://a.example:443/x` and `https://a.example/x` |
+  | `.` and `..` path segments | `https://a.example/a/../x` and `https://a.example/x` |
+  | an empty query | `https://a.example/x?` and `https://a.example/x` |
+  | the letter case of a percent escape | `/caf%c3%a9` and `/caf%C3%A9` |
+
+  Everything else is kept distinct, because it can name a different artifact:
+  path case, a trailing slash on a path, a query string that has content
+  (including the order of its pairs), a non-default port, `%2F` versus `/`,
+  `%41` versus `A`, `www.` versus the bare host, `http` versus `https`, and
+  any string that is not an `http(s)://` URL (a file name's `%2f` and `%2F`
+  are different files). **The fragment is dropped on every `http(s)://` URL,
+  including a hash route such as `https://app.example/#/reports/2023`, so
+  two pages of a hash-routed single-page app, or two line anchors in one code
+  host file, are counted as one source.** If your sources look like that,
+  move the route out of the fragment before calling (for example
+  `https://app.example/__route__/reports/2023`). `source` must be a string
+  that shows something; `corroborate` throws `TypeError` otherwise.
 - `kind` is assigned by the caller. `'textual'` means a text/keyword/pattern
   match. The other three kinds are meant for anything that isn't just text
   matching text: a structural read (a schema, a directory listing, a parsed
@@ -236,6 +255,23 @@ Rules, applied in order:
 Grading does not depend on the order of `signals`. Neither the `signals`
 array nor its objects are mutated.
 
+Two consequences of these rules are intended, so they are spelled out:
+
+- **The non-textual signal can come from any counted source on that side.**
+  Rule 4 needs 2+ distinct supporting sources and at least one non-`'textual'`
+  signal among the signals that voted `'supports'`. It does not need the
+  non-textual signal to come from a different source than the textual one, so
+  source A with a textual and a structural signal plus source B with a textual
+  signal is `'confirmed'`. That is the same evidence as A (structural) plus B
+  (textual), because A's extra textual signal adds nothing. A non-textual
+  signal that votes `'inconclusive'`, or votes for the other side, never
+  unlocks `'confirmed'`.
+- **A textual signal can lower a verdict but never raise it to `'confirmed'`.**
+  Rule 1 counts any distinct contradicting source, however weak, so one
+  textual contradiction beside ten confirming structural sources is
+  `'mixed'`. This is deliberate: disagreement is surfaced, not outvoted. Check
+  `supports` and `contradicts` to see how lopsided a `'mixed'` verdict is.
+
 **Input is read once.** `corroborate` reads the array's length once and each
 element once, and copies each signal by reading each of its fields once (an
 own enumerable field, a non-enumerable one, and a field inherited from a
@@ -266,8 +302,16 @@ A `source` shows nothing when it is empty or made only of whitespace,
 control characters, invisible formatting characters (zero-width spaces and
 joiners, the soft hyphen, bidi controls such as U+061C and U+2066-2069,
 variation selectors, the interlinear annotation characters U+FFF9-FFFB, every
-other Unicode `Cf` format character) and the braille blank U+2800. Visible text in any script, emoji, and visible text
-wrapped in bidi controls are accepted.
+other Unicode `Cf` format character), the braille blank U+2800, the object
+replacement character U+FFFC, private-use code points, unassigned code points
+(including the noncharacters U+FFFE and U+FFFF) and combining marks that have
+no base character in the string. None of these names an artifact, and without
+them two junk strings such as U+E000 and U+E001 would count as two independent
+sources. Visible text in any script, emoji, and visible text wrapped in bidi
+controls are accepted, and so is a letter next to any of the characters above
+(`'e\u0301'` and `'a\ufffc'` are fine; `'\u0301'` alone is not). Which code
+points are unassigned follows the Unicode data of the Node version you run, so
+a source made only of a character newer than that data is rejected there.
 
 Error messages describe the offending value without calling into it (no
 `toString`, `toJSON` or getter runs), cut a long string to 40 characters, and
@@ -289,14 +333,26 @@ topic, whatever your evidence pool's unit is.
   describe an impossible scan (a negative count, or sampling more than the
   pool contains), almost always a caller bug rather than a real thin sample.
 - A small pool (`totalUnits <= 30`) with any valid sample, or a high sample
-  ratio (`>= 0.6`), is `'strong'` — but only if `hadStructuralReadAccess` is
-  exactly `true` (a truthy non-boolean does not count). A
-  structural/manifest-level read (a table of contents, a schema, an index)
-  independent of the per-unit sample is what promotes a partial sample to
-  strong, because it answers some questions without needing every unit's
-  body read.
-- A mid-range ratio (`>= 0.15`) is `'partial'`.
-- Anything below that is `'thin'`.
+  ratio (`>= 0.6`), is `'strong'` if `hadStructuralReadAccess` is exactly
+  `true` (a truthy non-boolean does not count) and `'partial'` if it is not.
+  A structural/manifest-level read (a table of contents, a schema, an index)
+  independent of the per-unit sample is what promotes these to strong,
+  because it answers some questions without needing every unit's body read.
+- Any other ratio of `0.15` or more is `'partial'`.
+- Anything below `0.15` is `'thin'`.
+
+**The 30-unit cliff.** The small-pool rule looks at the size of the pool, not
+the size of the sample. `coverageOf(1, 30, true)` is `'strong'` (one unit out
+of thirty, about 3%), while `coverageOf(1, 31, true)` is `'thin'` and
+`coverageOf(4, 31, true)` is still `'thin'`. Combined with `corroborate`, a
+single unit sampled from a 30-unit pool can therefore reach `'confirmed'`.
+That is how the helper is defined, not an accident, but if a tiny sample
+should never be trusted in your domain, apply your own floor and pass the
+result in, since `corroborate` accepts any `Coverage`:
+
+```ts
+const coverage = sampled < 5 ? 'thin' : coverageOf(sampled, total, hadStructuralRead)
+```
 
 ### `verdictLabel(v: Verdict): string` / `coverageLabel(c: Coverage): string`
 
@@ -359,6 +415,19 @@ is honest, correctly labeled, or actually independent in reality:
   "independent" (see the note on under-merging above), so canonicalize
   sources before calling if your source strings can carry invisible
   characters.
+- **Hash-routed pages are one source.** The fragment is dropped on every
+  `http(s)://` URL, because a fragment is never sent to a server. For a
+  single-page app that routes on the fragment (`#/inbox`, `#!/report/7`), or
+  a code host that anchors lines (`#L10`), different pages or lines fold into
+  one source. See `Signal` above for the workaround.
+- **`coverageOf` has a cliff at 30 units.** A pool of 30 or fewer units is
+  `'strong'` for any sample with structural read access, so one unit of 30
+  can unlock `'confirmed'`. See `coverageOf` above for the exact boundary and a
+  caller-side floor.
+- **Only the invisible characters listed above are rejected.** A source of
+  nothing but lone UTF-16 surrogates or U+FFFD (which draws a visible
+  replacement mark) is accepted, so two different strings of that kind can
+  count as two sources. Clean such input before calling.
 - **Coverage is only as honest as `sampledUnits` and `totalUnits`.**
   `coverageOf` does the arithmetic correctly, but it cannot check that the
   caller's counts describe the evidence pool honestly.

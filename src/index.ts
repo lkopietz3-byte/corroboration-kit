@@ -63,7 +63,9 @@ export interface Signal {
    * with the same `source` count as ONE independent source, however many
    * of them there are. Must be a string that shows something: not empty and
    * not made only of whitespace, control characters, invisible formatting
-   * characters or the braille blank. `corroborate` throws `TypeError` otherwise. */
+   * characters, the braille blank, U+FFFC, private-use or unassigned code
+   * points, or combining marks with no base. `corroborate` throws `TypeError`
+   * otherwise. */
   source: string
   /** The evidence type, assigned by the caller. Only non-'textual' kinds
    * can unlock a 'confirmed' verdict — see the module doc comment. */
@@ -115,11 +117,24 @@ const COVERAGES: readonly Coverage[] = ['strong', 'partial', 'thin']
 // joiners, the soft hyphen, the word joiner, every bidi control such as
 // U+061C and U+2066-2069, variation selectors, Hangul fillers), the rest of
 // the Cf format characters (for example the interlinear annotation anchors
-// U+FFF9-FFFB) and the braille blank U+2800, which has no dots. String.trim
-// alone misses all of these. Visible text in any script, emoji (including ZWJ
-// sequences), and visible text wrapped in bidi controls all still count as
-// present, because one visible character is enough.
-const BLANK = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Cc}\p{Cf}\u2800]*$/u
+// U+FFF9-FFFB), the braille blank U+2800, which has no dots, and four more
+// kinds that name no artifact on their own:
+//   - U+FFFC, the object replacement character, a placeholder for an embedded
+//     object that is not in the text;
+//   - private-use code points (Co), which have no standard glyph and render as
+//     nothing or as a font-specific box;
+//   - unassigned code points (Cn, including the noncharacters), which render
+//     as nothing or as a missing-glyph box. Which code points are unassigned
+//     follows the Unicode data of the running JavaScript engine;
+//   - combining marks (M) with no base character in the string, which render
+//     as nothing or as a dotted circle. A mark after a visible character is
+//     fine, and a string of marks after invisible characters is still blank.
+// String.trim alone misses all of these. Without them two junk strings such as
+// U+E000 and U+E001 would count as two independent artifacts. Visible text in
+// any script, emoji (including ZWJ sequences), and visible text wrapped in
+// bidi controls all still count as present, because one visible character is
+// enough.
+const BLANK = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{M}\u2800\ufffc]*$/u
 
 // Everything that could end a line, move the cursor, send a terminal escape or
 // reorder the text around it when a caller-supplied string is printed:
@@ -239,7 +254,12 @@ function snapshotAndValidate(signals: unknown, coverage: unknown): Signal[] {
 // The build targets ES2022 with no DOM or Node type packages, so the WHATWG
 // `URL` global is not declared. It exists at runtime on every supported Node
 // version and in browsers; declare only the two members used below.
-declare const URL: new (input: string) => { hash: string; readonly href: string }
+declare const URL: new (input: string) => {
+  hash: string
+  search: string
+  hostname: string
+  readonly href: string
+}
 
 /**
  * The identity a `source` string is counted under.
@@ -247,15 +267,23 @@ declare const URL: new (input: string) => { hash: string; readonly href: string 
  * Only differences that cannot change WHICH artifact is meant are folded:
  * surrounding whitespace, Unicode canonical equivalence (NFC vs NFD, which
  * differ between operating systems' file names), and, for http(s) URLs, the
- * fragment, the case of scheme and host, an explicit default port, and dot
- * segments (all via the WHATWG URL parser). A fragment is never sent to the
- * server, so `https://a.example/doc#s1` and `https://a.example/doc#s2` are one
- * page.
+ * fragment, the case of scheme and host, a trailing dot on the host (the DNS
+ * root label: `a.example.` is `a.example`), an explicit default port, dot
+ * segments, an empty query (`x?` is `x`), and the hex case of percent escapes
+ * (`%c3%a9` is `%C3%A9`, RFC 3986 section 2.1). All via the WHATWG URL parser
+ * plus those three small steps. A fragment is never sent to the server, so
+ * `https://a.example/doc#s1` and `https://a.example/doc#s2` are one page.
  *
  * Everything else stays distinct, because it can name a different artifact:
- * path case, a trailing slash, a query string, and any non-http(s) string.
- * Under-merging errs toward a false "independent", so callers who know two
- * spellings name the same artifact should canonicalize before calling.
+ * path case, a trailing slash, a query string with content (including the
+ * order of its pairs), a non-default port, `%2F` vs `/`, `%41` vs `A`, and any
+ * non-http(s) string. Under-merging errs toward a false "independent", so
+ * callers who know two spellings name the same artifact should canonicalize
+ * before calling.
+ *
+ * Known limit: dropping the fragment merges hash-routed single-page apps,
+ * where `https://app.example/#/a` and `https://app.example/#/b` are different
+ * pages. See the README.
  */
 function sourceKey(source: string): string {
   const text = source.trim().normalize('NFC')
@@ -263,7 +291,13 @@ function sourceKey(source: string): string {
     try {
       const url = new URL(text)
       url.hash = ''
-      return url.href
+      // An empty query still prints a bare "?" in the href; assigning '' clears it.
+      if (url.search === '') url.search = ''
+      // Drop the DNS root label. Never reduce a host to nothing ("http://./").
+      const host = url.hostname.replace(/\.+$/, '')
+      if (host !== '' && host !== url.hostname) url.hostname = host
+      // The parser keeps the case of escapes it did not write itself.
+      return url.href.replace(/%[0-9a-f]{2}/gi, (escape) => escape.toUpperCase())
     } catch {
       // Not a parseable URL after all: fall through and use the trimmed text.
     }
@@ -334,10 +368,16 @@ export function coverageLabel(c: Coverage): string {
  *   structural read answers some questions (what exists, what's declared)
  *   even without reading every unit's body. Only the literal boolean `true`
  *   counts; a truthy non-boolean is treated as `false`.
- * @returns 'thin' below a 0.15 sample ratio (or on an unusable count — NaN,
- *   Infinity, zero, or a non-number), 'partial' from 0.15 up, and 'strong' at
- *   or above 0.6 (or for any non-empty sample of a pool of 30 or fewer units)
- *   but only with `hadStructuralReadAccess`.
+ * @returns 'thin' on an unusable count (NaN, Infinity, zero, or a non-number)
+ *   and below a 0.15 sample ratio, except for a pool of 30 or fewer units.
+ *   A pool of 30 or fewer units (any sample size), or a ratio of 0.6 or more,
+ *   is 'strong' with `hadStructuralReadAccess` and 'partial' without it. Any
+ *   other ratio of 0.15 or more is 'partial'.
+ *
+ *   The 30-unit rule looks at the pool, not the sample: 1 of 30 with
+ *   structural access is 'strong' (about 3%), while 1 of 31 is 'thin'. A
+ *   caller who never wants a tiny sample trusted should apply its own floor
+ *   and pass the resulting `Coverage` to `corroborate`.
  * @throws {RangeError} if `sampledUnits` or `totalUnits` is a negative finite
  *   number, or if `sampledUnits` is a finite number greater than a finite
  *   `totalUnits`. Both describe an impossible scan (you cannot sample a
@@ -387,7 +427,9 @@ export function coverageOf(
 /**
  * Grade a claim from the signals collected about it.
  *
- * Rules, in the order they're applied:
+ * Rules, in the order they're applied (the non-textual signal in rule 4 may
+ * come from any counted source on that side, and any one contradicting
+ * source, even a textual one, turns a supported claim into 'mixed'):
  * 1. If distinct sources vote both ways, that's real disagreement: 'mixed'.
  *    It is never averaged into a false middle ground.
  * 2. If only contradicting sources exist, the claim's negative case can only
@@ -406,8 +448,9 @@ export function coverageOf(
  *
  * Independence is counted by `source`, not by array length: two `Signal`s
  * with the same `source` (after folding whitespace, Unicode normalization,
- * and — for http(s) URLs — the fragment, scheme/host case, default port and
- * dot segments) count as one. Grading does not depend on the order of
+ * and — for http(s) URLs — the fragment, scheme/host case, a trailing host
+ * dot, default port, dot segments, an empty query and percent-escape hex
+ * case) count as one. Dropping the fragment merges hash-routed pages. Grading does not depend on the order of
  * `signals`, and neither the input array nor its objects are modified.
  *
  * The input is read once. The array's length and each element are read once,
@@ -429,7 +472,9 @@ export function coverageOf(
  * @throws {TypeError} if `signals` is not an array of valid `Signal` objects
  *   (a hole in the array; a non-object element; a non-string `source`, or one
  *   that is empty or shows nothing: whitespace, control, invisible
- *   formatting characters and the braille blank only; an unrecognized `kind` or `vote`) or
+ *   formatting characters, the braille blank, U+FFFC, private-use or
+ *   unassigned code points and base-less combining marks only; an
+ *   unrecognized `kind` or `vote`) or
  *   `coverage` is not `'strong' | 'partial' | 'thin'`. `detail` is never
  *   validated. This is a deliberate fail-closed check: a value the type
  *   system would have rejected (e.g. from an untyped caller or a bad cast)
