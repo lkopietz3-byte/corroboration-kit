@@ -98,7 +98,8 @@ is two again.
 - Page-level sites ignore the prefixes `www`, `m`, `mobile`, `amp`, `old` and `np`, so `m.reddit.com` and `www.reddit.com` spellings of one thread are one source (different pages stay apart).
 - The Bitbucket API (`api.bitbucket.org/2.0/repositories/<owner>/<repo>/...`), the Codeberg API (`/api/v1/repos/<owner>/<repo>/...`) and the GitLab API with an escaped project path (`/api/v4/projects/<group>%2F<proj>/...`) map to the repository, as the GitHub API already did. A numeric GitLab project id is not guessed.
 - A declared `origin` that is not a URL compares exactly after trim and NFC; it no longer goes through the file-path folding (`left//right` and `left/right` are two origins).
-- Merge explanations no longer serialize every source string for every shared identity; duplicate reasons are found with small numbers.
+- Repository names read from a code-host URL are percent-decoded and then lower-cased (an escaped slash stays an escape), so `%41cme` and `Acme` are one owner on every code host, including the GitLab API project path.
+- Merge explanations no longer serialize every source string for every shared identity; duplicate reasons are found with a constant-time key of small numbers.
 - A host made of a very long run of dots took quadratic time (about 0.4 s at
   20,000 dots and 6 s at 80,000): the trailing-dot step used a suffix regex.
   It is now a backward scan, and hosts over 253 characters are not analyzed

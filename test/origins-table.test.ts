@@ -127,6 +127,13 @@ describe('origin table: URL-based origin inference (default)', () => {
     ['O87', 'gitlab API URL with an escaped path and the project page', 'https://gitlab.com/api/v4/projects/grp%2Fsub%2Fproj/repository/files/a.md/raw', 'https://gitlab.com/grp/sub/proj/-/blob/main/a.md', ONE, TWO],
     ['O88', 'gitlab API URL with a numeric project id is not guessed', 'https://gitlab.com/api/v4/projects/12345/repository/files/a.md/raw', 'https://gitlab.com/grp/proj/-/blob/main/a.md', TWO, TWO],
     ['O89', 'codeberg API URL and the repository page', 'https://codeberg.org/api/v1/repos/acme/rel/contents/a.md', 'https://codeberg.org/acme/rel/src/branch/main/a.md', ONE, TWO],
+    ['O90', 'gitlab API path with an escaped letter keeps no case', 'https://gitlab.com/api/v4/projects/%41cme%2Frel/repository/files/a/raw', 'https://gitlab.com/api/v4/projects/Acme%2Frel/repository/files/a/raw', ONE, TWO],
+    ['O91', 'gitlab API path with an escaped letter versus the project page', 'https://gitlab.com/api/v4/projects/%41cme%2Frel/repository/files/a/raw', 'https://gitlab.com/acme/rel/-/blob/main/a', ONE, TWO],
+    ['O92', 'github owner with an escaped letter', 'https://github.com/%41cme/rel/issues/1', 'https://github.com/acme/rel', ONE, TWO],
+    ['O93', 'bitbucket and codeberg names with escaped letters', 'https://bitbucket.org/%41cme/%52el/src/main/a', 'https://api.bitbucket.org/2.0/repositories/acme/rel', ONE, TWO],
+    ['O94', 'codeberg names with escaped letters', 'https://codeberg.org/api/v1/repos/%41cme/%52el/contents/a', 'https://codeberg.org/acme/rel', ONE, TWO],
+    ['O95', 'a malformed escape in a repository name does not throw and stays its own name', 'https://github.com/acme/r%E0%A4el', 'https://github.com/acme/rel', TWO, TWO],
+    ['O96', 'an escaped slash in a github name is not a slash', 'https://github.com/acme%2Fx/rel', 'https://github.com/acme/x', TWO, TWO],
     ['O59', 'a code-host reserved path falls back to the site', 'https://github.com/features/actions', 'https://github.com/pricing', ONE, TWO],
   ]
   it.each(ROWS)('%s %s', (_id, _name, a, b, expected) => {
@@ -780,6 +787,19 @@ describe('origin table: scaling on hostile input', () => {
     const small = best(run(5))
     const large = best(run(100))
     expect(large / Math.max(small, 1)).toBeLessThan(6)
+  })
+
+  it('S06 many identities that share a group, size, smallest and largest member but differ in the middle scale linearly', { timeout: 120_000 }, () => {
+    const run = (n: number) => () => {
+      const labels = Array.from({ length: n - 2 }, (_, i) => `u${i + 1}`)
+      const signals = Array.from({ length: n }, (_, i) =>
+        i === 0 || i === n - 1 ? sig(`s${i}`, 'textual', 'supports', { derivedFrom: labels }) : sig(`s${i}`, 'textual', 'supports', { derivedFrom: [`u${i}`] }),
+      )
+      corroborate(signals, 'strong')
+    }
+    const small = best(run(4_000))
+    const large = best(run(16_000))
+    expect(large / Math.max(small, 1)).toBeLessThan(8)
   })
 
   it('S04 long percent runs and long paths on one host scale roughly linearly', { timeout: 120_000 }, () => {

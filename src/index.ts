@@ -556,7 +556,17 @@ function hostMatches(host: string, entries: readonly string[]): boolean {
   return false
 }
 
-/** The first `max` non-empty path segments, lower-cased, by a scan that stops early. */
+/** One path segment, percent-decoded (except an escaped slash, kept as "%2f") and lower-cased. */
+function decodeSegment(segment: string): string {
+  if (!segment.includes('%')) return segment.toLowerCase()
+  try {
+    return decodeURIComponent(segment.replace(/%2f/gi, '%252f')).toLowerCase()
+  } catch {
+    return segment.toLowerCase()
+  }
+}
+
+/** The first `max` non-empty path segments, decoded and lower-cased, by a scan that stops early. */
 function firstSegments(pathname: string, max: number): string[] {
   const out: string[] = []
   let start = 0
@@ -564,7 +574,7 @@ function firstSegments(pathname: string, max: number): string[] {
   while (out.length < max && start < n) {
     let end = pathname.indexOf('/', start)
     if (end === -1) end = n
-    if (end > start) out.push(pathname.slice(start, end).toLowerCase())
+    if (end > start) out.push(decodeSegment(pathname.slice(start, end)))
     start = end + 1
   }
   return out
@@ -615,12 +625,7 @@ function repoOf(u: UrlParts): string | undefined {
     const segs = firstSegments(u.pathname, 16)
     if (segs[0] === 'api' && segs[1] === 'v4' && segs[2] === 'projects' && segs[3] !== undefined) {
       // The project is named by its escaped path ("group%2Fproj"); a numeric id says nothing about the path.
-      let path: string
-      try {
-        path = decodeURIComponent(segs[3])
-      } catch {
-        return undefined
-      }
+      const path = segs[3].split('%2f').join('/')
       return path.includes('/') ? `gitlab.com/${withoutDotGit(trimSlashes(path))}` : undefined
     }
     if (segs[0] === undefined || GITLAB_RESERVED.has(segs[0])) return undefined
@@ -942,17 +947,14 @@ function groupSide(snapshot: readonly Signal[], side: 'supports' | 'contradicts'
     })
   }
   candidates.sort((x, y) => x.rank - y.rank || x.first - y.first)
-  // Two reasons that join the same set of sources are one reason. Compare small
-  // numbers, never the source strings: bucket by (group, size, smallest, largest)
-  // and compare sorted number lists only inside a bucket.
-  const emitted = new Map<string, number[][]>()
+  // Two reasons that join the same set of sources are one reason. The key is the
+  // group plus the sorted source numbers, so a lookup is constant time however
+  // many sets share a size or their smallest and largest member.
+  const emitted = new Set<string>()
   for (const c of candidates) {
-    const sorted = [...c.ids].sort((x, y) => x - y)
-    const bucket = `${c.root}:${sorted.length}:${sorted[0] as number}:${sorted[sorted.length - 1] as number}`
-    const seenInBucket = emitted.get(bucket)
-    if (seenInBucket !== undefined && seenInBucket.some((other) => other.every((v, i) => v === sorted[i]))) continue
-    if (seenInBucket === undefined) emitted.set(bucket, [sorted])
-    else seenInBucket.push(sorted)
+    const key = `${c.root}:${[...c.ids].sort((x, y) => x - y).join(',')}`
+    if (emitted.has(key)) continue
+    emitted.add(key)
     ;(byRoot.get(c.root) as SourceGroup).merges.push(c.merge)
   }
   return groups
