@@ -117,6 +117,16 @@ describe('origin table: URL-based origin inference (default)', () => {
     ['O74', 'a snapshot of a forum thread stays the thread', 'https://web.archive.org/web/2022/https://news.ycombinator.com/item?id=1', 'https://web.archive.org/web/2022/https://news.ycombinator.com/item?id=2', TWO, TWO],
     ['O75', 'a nested archive is read one level only', 'https://web.archive.org/web/2022/https://web.archive.org/web/2020/https://a.example/x', 'https://a.example/y', TWO, TWO],
     ['O76', 'an archive path that is not a snapshot stays on the archive host', 'https://web.archive.org/save/https://a.example/x', 'https://a.example/y', TWO, TWO],
+    ['O80', 'a page-level site: m. and www. spellings of one thread', 'https://m.reddit.com/r/x/comments/1', 'https://www.reddit.com/r/x/comments/1', ONE, TWO],
+    ['O81', 'a page-level site: old. and np. spellings of one thread', 'https://old.reddit.com/r/x/comments/1', 'https://np.reddit.com/r/x/comments/1', ONE, TWO],
+    ['O82', 'a page-level site: mobile. and bare spellings of one post', 'https://mobile.twitter.com/acme/status/1', 'https://twitter.com/acme/status/1', ONE, TWO],
+    ['O83', 'a page-level site: m. and www. of DIFFERENT pages stay apart', 'https://m.youtube.com/watch?v=aaa', 'https://www.youtube.com/watch?v=bbb', TWO, TWO],
+    ['O84', 'a page-level site: docs and blog prefixes are not stripped from the page host', 'https://docs.google.com/document/d/1', 'https://google.com/document/d/1', TWO, TWO],
+    ['O85', 'bitbucket API URL and the repository page', 'https://api.bitbucket.org/2.0/repositories/acme/rel/src/main/a.md', 'https://bitbucket.org/acme/rel/src/main/a.md', ONE, TWO],
+    ['O86', 'bitbucket API URLs of two repositories stay apart', 'https://api.bitbucket.org/2.0/repositories/acme/one', 'https://api.bitbucket.org/2.0/repositories/acme/two', TWO, TWO],
+    ['O87', 'gitlab API URL with an escaped path and the project page', 'https://gitlab.com/api/v4/projects/grp%2Fsub%2Fproj/repository/files/a.md/raw', 'https://gitlab.com/grp/sub/proj/-/blob/main/a.md', ONE, TWO],
+    ['O88', 'gitlab API URL with a numeric project id is not guessed', 'https://gitlab.com/api/v4/projects/12345/repository/files/a.md/raw', 'https://gitlab.com/grp/proj/-/blob/main/a.md', TWO, TWO],
+    ['O89', 'codeberg API URL and the repository page', 'https://codeberg.org/api/v1/repos/acme/rel/contents/a.md', 'https://codeberg.org/acme/rel/src/branch/main/a.md', ONE, TWO],
     ['O59', 'a code-host reserved path falls back to the site', 'https://github.com/features/actions', 'https://github.com/pricing', ONE, TWO],
   ]
   it.each(ROWS)('%s %s', (_id, _name, a, b, expected) => {
@@ -257,6 +267,15 @@ describe('origin table: declared lineage (origin, derivedFrom)', () => {
   it('P12 origin text is matched exactly after trimming and NFC; case differs on purpose', () => {
     expect(grade([sig('a', 'structural', 'supports', { origin: ' caf\u00e9 ' }), sig('b', 'textual', 'supports', { origin: 'cafe\u0301' })])).toMatchObject({ supports: 1 })
     expect(grade([sig('a', 'structural', 'supports', { origin: 'Upstream' }), sig('b', 'textual', 'supports', { origin: 'upstream' })])).toMatchObject({ supports: 2 })
+  })
+
+  it('P16 declared non-URL labels compare exactly: no path folding', () => {
+    for (const [a, b] of [['left//right', 'left/right'], ['./x', 'x'], ['.//x', './x']] as const) {
+      expect(grade([sig('a', 'structural', 'supports', { origin: a }), sig('b', 'textual', 'supports', { origin: b })])).toMatchObject({ supports: 2 })
+    }
+    // An upstream named as a SOURCE is matched by page identity, so two entries that fold to one page are one upstream.
+    expect(grade([sig('a', 'structural', 'supports', { derivedFrom: ['left//right'] }), sig('b', 'textual', 'supports', { derivedFrom: ['left/right'] })])).toMatchObject({ supports: 1 })
+    expect(grade([sig('src/a.ts', 'structural'), sig('copy', 'textual', 'supports', { derivedFrom: ['./src//a.ts'] })])).toMatchObject({ supports: 1 })
   })
 
   it('P13 an empty derivedFrom list and an absent origin change nothing', () => {
@@ -748,6 +767,19 @@ describe('origin table: scaling on hostile input', () => {
     const small = best(run(10_000))
     const large = best(run(40_000))
     expect(large / Math.max(small, 1)).toBeLessThan(8)
+  })
+
+  it('S05 many shared derivedFrom identities over long sources cost the shared pairs, not the source length again', { timeout: 120_000 }, () => {
+    const run = (k: number) => () =>
+      corroborate(
+        Array.from({ length: 200 }, (_, i) =>
+          sig(`https://h${i}.example/${'p'.repeat(20_000)}${i}`, 'textual', 'supports', { derivedFrom: Array.from({ length: k }, (_, j) => `u${j}`) }),
+        ),
+        'strong',
+      )
+    const small = best(run(5))
+    const large = best(run(100))
+    expect(large / Math.max(small, 1)).toBeLessThan(6)
   })
 
   it('S04 long percent runs and long paths on one host scale roughly linearly', { timeout: 120_000 }, () => {

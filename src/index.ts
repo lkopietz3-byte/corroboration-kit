@@ -480,6 +480,10 @@ function sourceKey(source: string): string {
 // ---------------------------------------------------------------------------
 
 // Prefixes that name a face of one site, not a different publisher.
+// Prefixes that name another face of one page on a page-level site (m.reddit.com,
+// old.reddit.com, np.reddit.com, mobile.twitter.com). docs, blog and api are not
+// here: on these sites they are separate publications.
+const PAGE_PREFIXES: ReadonlySet<string> = new Set(['www', 'm', 'mobile', 'amp', 'old', 'np'])
 const SITE_PREFIXES: ReadonlySet<string> = new Set(['www', 'm', 'mobile', 'amp', 'docs', 'blog', 'api'])
 
 // Second-level labels that sit under a two-letter country code (bbc.co.uk,
@@ -568,6 +572,15 @@ function firstSegments(pathname: string, max: number): string[] {
 
 type Entry = { id: string; rule: MergeRule; label: string }
 
+/** `s` without leading and trailing slashes, by scans from each end. */
+function trimSlashes(s: string): string {
+  let start = 0
+  let end = s.length
+  while (start < end && s.charCodeAt(start) === 47) start++
+  while (end > start && s.charCodeAt(end - 1) === 47) end--
+  return s.slice(start, end)
+}
+
 const withoutDotGit = (name: string): string => (name.endsWith('.git') && name.length > 4 ? name.slice(0, -4) : name)
 
 /** The repository an `http(s)` code-host URL points into, as "host/owner/name", or undefined. */
@@ -584,6 +597,14 @@ function repoOf(u: UrlParts): string | undefined {
     const segs = firstSegments(u.pathname, 3)
     return segs[0] === 'repos' && segs[1] !== undefined && segs[2] !== undefined ? `github.com/${segs[1]}/${withoutDotGit(segs[2])}` : undefined
   }
+  if (bare === 'api.bitbucket.org') {
+    const segs = firstSegments(u.pathname, 4)
+    return segs[1] === 'repositories' && segs[2] !== undefined && segs[3] !== undefined ? `bitbucket.org/${segs[2]}/${withoutDotGit(segs[3])}` : undefined
+  }
+  if (bare === 'codeberg.org' && u.pathname.startsWith('/api/v1/repos/')) {
+    const segs = firstSegments(u.pathname, 5)
+    return segs[3] !== undefined && segs[4] !== undefined ? `codeberg.org/${segs[3]}/${withoutDotGit(segs[4])}` : undefined
+  }
   if (bare === 'bitbucket.org' || bare === 'codeberg.org') {
     const segs = firstSegments(u.pathname, 2)
     const owner = segs[0]
@@ -592,6 +613,16 @@ function repoOf(u: UrlParts): string | undefined {
   }
   if (bare === 'gitlab.com') {
     const segs = firstSegments(u.pathname, 16)
+    if (segs[0] === 'api' && segs[1] === 'v4' && segs[2] === 'projects' && segs[3] !== undefined) {
+      // The project is named by its escaped path ("group%2Fproj"); a numeric id says nothing about the path.
+      let path: string
+      try {
+        path = decodeURIComponent(segs[3])
+      } catch {
+        return undefined
+      }
+      return path.includes('/') ? `gitlab.com/${withoutDotGit(trimSlashes(path))}` : undefined
+    }
     if (segs[0] === undefined || GITLAB_RESERVED.has(segs[0])) return undefined
     let cut = segs.indexOf('-')
     if (cut === -1) cut = segs.findIndex((seg, i) => i >= 2 && GITLAB_SUBPAGES.has(seg))
@@ -603,12 +634,14 @@ function repoOf(u: UrlParts): string | undefined {
   return undefined
 }
 
-/** `host` without leading www, m, mobile, amp, docs, blog and api labels, never below two labels. */
-function stripPrefixes(labels: string[]): string[] {
+/** `labels` without leading labels from `prefixes`, never below two labels. */
+function stripLabels(labels: string[], prefixes: ReadonlySet<string>): string[] {
   let from = 0
-  while (labels.length - from > 2 && SITE_PREFIXES.has(labels[from] as string)) from++
+  while (labels.length - from > 2 && prefixes.has(labels[from] as string)) from++
   return from === 0 ? labels : labels.slice(from)
 }
+
+const stripPrefixes = (labels: string[]): string[] => stripLabels(labels, SITE_PREFIXES)
 
 /** The registered domain of dotted labels (already prefix-stripped), or undefined when it cannot be judged. */
 function registeredDomain(labels: string[]): string | undefined {
@@ -653,9 +686,9 @@ function classifyUrl(u: UrlParts, archived = false): Entry[] {
   const exact = (): Entry[] => [{ id: `site:${host}`, rule: 'same-site', label: host }]
   if (host.length > 253) return exact()
 
-  const bare = host.startsWith('www.') ? host.slice(4) : host
   // A page-level site: the page is the origin. Port kept, fragment already gone.
   if (hostMatches(host, PAGE_HOSTS)) {
+    const bare = host.includes('.') ? stripLabels(host.split('.'), PAGE_PREFIXES).join('.') : host
     const key = `${bare}${u.port === '' ? '' : `:${u.port}`}${u.pathname}${u.search}`
     return [{ id: `page:${key}`, rule: 'same-page', label: key }]
   }
@@ -741,7 +774,8 @@ function referenceEntries(text: string, rule: 'declared-origin' | 'derived-from'
   if (infer && parsed.url !== undefined) {
     for (const e of classifyUrl(parsed.url)) out.push({ id: e.id, rule, label })
   } else {
-    out.push({ id: `label:${parsed.key}`, rule, label })
+    // A label that is not a URL compares exactly after trim and NFC: no path folding.
+    out.push({ id: `label:${parsed.url === undefined ? label.normalize('NFC') : parsed.key}`, rule, label })
   }
   // An upstream can also be named by the exact source it is: match that page.
   if (rule === 'derived-from') out.push({ id: `artifact:${parsed.key}`, rule, label })
@@ -799,8 +833,10 @@ interface IdInfo {
   first: number
   /** The distinct `source` strings that contributed this identity, first-seen order. */
   members: string[]
+  /** The same sources as small numbers (one per distinct string), so no string is compared or hashed again. */
+  memberIds: number[]
   /** Built only for a long member list, to keep the duplicate check linear. */
-  memberSet?: Set<string>
+  memberSet?: Set<number>
 }
 
 /** Group one side's signals by shared identity, with the reasons. Linear in the total size of the input. */
@@ -821,9 +857,16 @@ function groupSide(snapshot: readonly Signal[], side: 'supports' | 'contradicts'
     return root
   }
   const info = new Map<string, IdInfo>()
+  // One small number per distinct source string, looked up once per signal.
+  const sourceNumber = new Map<string, number>()
 
   for (let k = 0; k < indexes.length; k++) {
     const s = snapshot[indexes[k] as number] as Signal
+    let sid = sourceNumber.get(s.source)
+    if (sid === undefined) {
+      sid = sourceNumber.size
+      sourceNumber.set(s.source, sid)
+    }
     const entries = entriesOf(s, infer)
     // Most signals have two to four identities; only a long list needs a set to skip repeats.
     const seen = entries.length > 8 ? new Set<string>() : undefined
@@ -839,7 +882,7 @@ function groupSide(snapshot: readonly Signal[], side: 'supports' | 'contradicts'
       }
       let entry = info.get(e.id)
       if (entry === undefined) {
-        entry = { rule: e.rule, label: e.label, first: k, members: [s.source] }
+        entry = { rule: e.rule, label: e.label, first: k, members: [s.source], memberIds: [sid] }
         info.set(e.id, entry)
         continue
       }
@@ -851,13 +894,15 @@ function groupSide(snapshot: readonly Signal[], side: 'supports' | 'contradicts'
         entry.label = e.label
       }
       if (entry.memberSet !== undefined) {
-        if (!entry.memberSet.has(s.source)) {
-          entry.memberSet.add(s.source)
+        if (!entry.memberSet.has(sid)) {
+          entry.memberSet.add(sid)
           entry.members.push(s.source)
+          entry.memberIds.push(sid)
         }
-      } else if (!entry.members.includes(s.source)) {
+      } else if (!entry.memberIds.includes(sid)) {
         entry.members.push(s.source)
-        if (entry.members.length > 8) entry.memberSet = new Set(entry.members)
+        entry.memberIds.push(sid)
+        if (entry.memberIds.length > 8) entry.memberSet = new Set(entry.memberIds)
       }
     }
   }
@@ -884,7 +929,7 @@ function groupSide(snapshot: readonly Signal[], side: 'supports' | 'contradicts'
   }
 
   // One reason per shared identity, strongest reasons first, none repeated for the same set of sources.
-  const candidates: Array<{ root: number; rank: number; first: number; merge: SourceMerge }> = []
+  const candidates: Array<{ root: number; rank: number; first: number; ids: number[]; merge: SourceMerge }> = []
   for (const entry of info.values()) {
     if (entry.members.length < 2) continue
     const root = find(entry.first)
@@ -892,15 +937,22 @@ function groupSide(snapshot: readonly Signal[], side: 'supports' | 'contradicts'
       root,
       rank: RULE_ORDER.indexOf(entry.rule),
       first: entry.first,
+      ids: entry.memberIds,
       merge: { rule: entry.rule, key: entry.label, sources: [...entry.members], explanation: explain(entry.rule, entry.label, entry.members) },
     })
   }
   candidates.sort((x, y) => x.rank - y.rank || x.first - y.first)
-  const emitted = new Set<string>()
+  // Two reasons that join the same set of sources are one reason. Compare small
+  // numbers, never the source strings: bucket by (group, size, smallest, largest)
+  // and compare sorted number lists only inside a bucket.
+  const emitted = new Map<string, number[][]>()
   for (const c of candidates) {
-    const signature = `${c.root}\u0000${JSON.stringify(c.merge.sources)}`
-    if (emitted.has(signature)) continue
-    emitted.add(signature)
+    const sorted = [...c.ids].sort((x, y) => x - y)
+    const bucket = `${c.root}:${sorted.length}:${sorted[0] as number}:${sorted[sorted.length - 1] as number}`
+    const seenInBucket = emitted.get(bucket)
+    if (seenInBucket !== undefined && seenInBucket.some((other) => other.every((v, i) => v === sorted[i]))) continue
+    if (seenInBucket === undefined) emitted.set(bucket, [sorted])
+    else seenInBucket.push(sorted)
     ;(byRoot.get(c.root) as SourceGroup).merges.push(c.merge)
   }
   return groups

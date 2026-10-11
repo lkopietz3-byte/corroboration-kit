@@ -214,7 +214,8 @@ interface Signal {
 - `derivedFrom` (optional) lists what this source was copied or derived from,
   each entry read like an `origin` (a label or a URL). Sources that share an
   upstream, and a copy together with the signal it came from, count once. An
-  entry also matches a signal whose `source` is that entry. Must be an array
+  entry also matches a signal whose `source` is that entry, compared as a page
+  (so `./src//a.ts` names `src/a.ts`); an `origin` label is compared exactly. Must be an array
   of strings that show something; anything else throws `TypeError`.
 - `kind` is assigned by the caller. `'textual'` means a text/keyword/pattern
   match. The other three kinds are meant for anything that isn't just text
