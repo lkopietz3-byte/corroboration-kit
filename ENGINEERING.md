@@ -2,8 +2,12 @@
 
 ## Invariants (the promises the code is tested against)
 
-1. Independence is counted by distinct source **artifact**, never by signal
-   count. Two signals sharing one (normalized) `source` count once.
+1. Independence is counted by distinct **origin**, never by signal count. Two
+   signals count once when they share a (normalized) `source`, a declared
+   `origin`, a `derivedFrom` upstream, or, with URL inference on (the
+   default), a repository, a host (ignoring www, m, mobile, amp, docs, blog and
+   api) or a registered domain. Every way of merging only lowers a count, so a
+   count can never exceed the number of distinct normalized `source` values.
 2. `'confirmed'` is unreachable from `'textual'` signals alone, symmetrically
    for `supports` and `contradicts`; it requires 2+ distinct sources and at
    least one non-`'textual'` kind.
@@ -32,7 +36,22 @@
     only from the two counted-source totals and never changes the verdict. A
     `'confirmed'` verdict with direction `'contradicts'` means the evidence
     confirms the claim is false.
-11. Error messages never call into caller values (no `toString`, `toJSON` or
+11. Declared lineage is validated and read like the required fields: `origin`
+    and each `derivedFrom` entry must be a string that shows something,
+    `derivedFrom` an array (read once, copied), anything else is a `TypeError`
+    and `null` is not "absent". A declared `origin` replaces URL inference for
+    that signal but can never split two spellings of one page. `inferOrigins`
+    must be a boolean.
+12. `corroborate` returns `groups`, a partition of the counted signals: every
+    `supports` or `contradicts` signal is in exactly one group of its own side,
+    `supports` and `contradicts` equal the number of groups per side, and an
+    `inconclusive` signal is in none. The partition does not depend on input
+    order.
+13. Work is linear in the total size of the input (sources, lineage entries).
+    No unanchored regex retries over untrusted text, hosts longer than 253
+    characters are not analyzed, and only the first path segments of a code
+    host URL are read. Scaling tests assert this with CPU time.
+14. Error messages never call into caller values (no `toString`, `toJSON` or
     getter) and escape control and bidi characters, so building one cannot
     throw and cannot forge log structure. The label helpers accept only
     primitive strings.
@@ -60,9 +79,9 @@ runs the consumer probes) on Node 20, 20.19.0, 22, 22.12.0 and 24. 20.19.0 and
 ## What this is NOT certified to do
 
 See the README's "Honest limits" section. In short: it trusts the caller's
-`kind` and `vote` labels completely, it does not verify that two `source`
-strings naming different artifacts are genuinely independent in reality
-beyond the normalization rules above, and it has no search, fetch, or
+`kind` and `vote` labels completely, it does not verify that two sources are
+genuinely independent in reality beyond the normalization, URL inference and
+declared lineage described above, and it has no search, fetch, or
 stance-detection logic of its own. `'confirmed'` and `'not-found'` describe
 what this library's counting rules concluded, not an external certification.
 

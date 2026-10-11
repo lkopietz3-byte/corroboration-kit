@@ -4,7 +4,7 @@
 // called at least once at a boundary that pins its documented behavior.
 import assert from 'node:assert/strict';
 
-const { corroborate, coverageOf, verdictLabel, coverageLabel } = await import('corroboration-kit');
+const { corroborate, coverageOf, verdictLabel, coverageLabel, originOf, sourceIdentity } = await import('corroboration-kit');
 
 // --- coverageOf -------------------------------------------------------------
 
@@ -116,6 +116,47 @@ assert.equal(kindReads, 1);
 assert.equal(once.verdict, 'confirmed');
 assert.equal(once.signals[0].kind, 'structural');
 assert.throws(() => corroborate([{ source: '\u200b', kind: 'structural', vote: 'supports', detail: 'd' }], 'strong'), TypeError);
+
+// --- origins and lineage ------------------------------------------------
+
+// Two files of one repository are one origin, so two textual-plus-structural
+// signals from them can only reach 'likely', and the result says why.
+const sameRepo = corroborate(
+  [
+    { source: 'https://github.com/acme/release/blob/main/schedule.json', kind: 'declarative', vote: 'supports', detail: 'd' },
+    { source: 'https://github.com/acme/release/blob/main/README.md', kind: 'textual', vote: 'supports', detail: 'd' },
+  ],
+  'strong',
+);
+assert.equal(sameRepo.supports, 1);
+assert.equal(sameRepo.verdict, 'likely');
+assert.equal(sameRepo.groups.length, 1);
+assert.equal(sameRepo.groups[0].merges[0].rule, 'same-repo');
+// A copy that declares its upstream joins the upstream's group.
+const copy = corroborate(
+  [
+    { source: 'original', kind: 'structural', vote: 'supports', detail: 'd' },
+    { source: 'copy', kind: 'textual', vote: 'supports', detail: 'd', derivedFrom: ['original'] },
+  ],
+  'strong',
+);
+assert.equal(copy.supports, 1);
+assert.equal(copy.groups[0].merges[0].rule, 'derived-from');
+// Inference can be turned off; spellings of one page still fold.
+const off = corroborate(
+  [
+    { source: 'https://venue.example/menu', kind: 'declarative', vote: 'supports', detail: 'd' },
+    { source: 'https://venue.example/contact', kind: 'textual', vote: 'supports', detail: 'd' },
+  ],
+  'strong',
+  { inferOrigins: false },
+);
+assert.equal(off.verdict, 'confirmed');
+assert.equal(originOf('https://www.venue.example/menu'), 'domain:venue.example');
+assert.equal(originOf('plain-id'), undefined);
+assert.equal(sourceIdentity('./src//a.ts'), 'src/a.ts');
+assert.throws(() => corroborate([{ source: 'a', kind: 'textual', vote: 'supports', detail: 'd', origin: '' }], 'strong'), TypeError);
+assert.throws(() => corroborate([], 'strong', { inferOrigins: 'no' }), TypeError);
 
 // --- labels -------------------------------------------------------------
 

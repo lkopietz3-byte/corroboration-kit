@@ -566,6 +566,11 @@ describe('CK-003: direction says which way the counted evidence points', () => {
       signals: [sig('a', 'textual', 'supports'), sig('b', 'structural', 'supports')],
       supports: 2,
       contradicts: 0,
+      // Added with origin grouping: the counted sources, one group each.
+      groups: [
+        { side: 'supports', source: 'a', sources: ['a'], signals: [0], merges: [] },
+        { side: 'supports', source: 'b', sources: ['b'], signals: [1], merges: [] },
+      ],
     })
   })
 })

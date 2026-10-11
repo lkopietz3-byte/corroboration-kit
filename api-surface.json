@@ -3,6 +3,8 @@
     "corroborate",
     "coverageLabel",
     "coverageOf",
+    "originOf",
+    "sourceIdentity",
     "verdictLabel"
   ]
 }

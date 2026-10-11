@@ -7,8 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Origins: `'confirmed'` now means independent origins, not different strings.**
+  Signals are counted by origin. Two pages of one site, two files of one
+  repository and a copy next to its upstream count once. The grouping is
+  offline and has no public-suffix list:
+  - `Signal.origin` (optional string): signals that declare the same origin
+    count once. A signal that declares one is not grouped by its URL.
+  - `Signal.derivedFrom` (optional list of strings): sources that share an
+    upstream, or one that names another signal's `source`, count once.
+  - URL inference for `http(s)` sources: the same repository on github.com,
+    gitlab.com, bitbucket.org or codeberg.org (including raw, codeload and API
+    hosts); the same host once `www`, `m`, `mobile`, `amp`, `docs`, `blog` and
+    `api` are ignored; and hosts that share a registered domain. Shared hosting
+    platforms (`github.io`, `vercel.app` and others) are one origin per
+    subdomain, sites where each page is its own publication (forum threads,
+    social posts, preprints, shared documents) are one origin per page, a
+    web.archive.org snapshot is read as the page it archives (one level), and country codes whose structure cannot be judged keep subdomains
+    apart. Declared lineage always wins over inference.
+  - `Corroboration.groups`: which signals were counted together and why, one
+    entry per counted source, with a `merges` list (`same-page`,
+    `declared-origin`, `derived-from`, `same-repo`, `same-site`, `same-domain`)
+    and a plain sentence for each.
+  - `corroborate(signals, coverage, { inferOrigins: false })` turns the URL
+    inference off. Spellings of one page still fold, and declared lineage still
+    applies.
+  - New exports `originOf(source)` and `sourceIdentity(source)`, new types
+    `CorroborateOptions`, `MergeRule`, `SourceGroup` and `SourceMerge`.
+- Plain file ids fold a leading `./` and a run of slashes (`./src//a.ts` is
+  `src/a.ts`). Case, backslashes, `../`, a leading `/` and any string that
+  starts with a scheme are left as written.
+- `test/origins-table.test.ts`: the origin and lineage verdict table, with every
+  changed verdict listed by input, two seeded fuzz oracles and CPU-time scaling
+  tests.
+- `test/verdict-table.test.ts`: a named verdict regression table (source
+  identity, the non-textual gate, blank sources, `coverageOf`, README
+  examples) and a seeded 15,000-case fuzz checked against an independent
+  oracle.
+
+### Changed (behavior; every change makes a verdict equal or stricter)
+
+Counts can only go down from 0.2.1 for the same input, never up, so a verdict
+can only go from `'confirmed'` to `'likely'`. Each input below was two sources
+and `'confirmed'` (with one textual and one structural signal, strong coverage)
+and is now one source and `'likely'`. With `{ inferOrigins: false }` every one
+is two again.
+
+- Two pages of one host: path case (`/X` and `/x`), a trailing slash (`/x` and
+  `/x/`), a query against none, different query values, the same query pairs
+  in another order, a bare-key query against an empty one, `%2F` against `/`,
+  `%41` against `A`, `+` against `%20`, `%7E` against `~`, `(` `)` against
+  `%28` `%29`, a literal `%` against `%25`, `&` against `%26`, a trailing `&`,
+  a trailing dot on the path, a double slash, a directory against
+  `index.html`, a tracking parameter, a non-default port (`:8443`, `http` on
+  `:443`, `https` on `:80`), `http` against `https`, `www` against the bare
+  host, and userinfo against none. Rows D01 to D16 and D22 to D30 of
+  `test/verdict-table.test.ts`, and L03 (the documented workaround of moving a
+  route out of the fragment, which now needs a declared `origin` per page).
+- Different hosts that share a registered domain, or differ only by `www`, `m`,
+  `mobile`, `amp`, `docs`, `blog` or `api` (`learn.corp.example` and
+  `support.corp.example`, `docs.acme.example` and `blog.acme.example`,
+  `news.acme.co.uk` and `shop.acme.co.uk`, `en.wiki.example` and
+  `de.wiki.example`).
+- Two URLs into one repository on a code host (`github.com/acme/release/...`,
+  `raw.githubusercontent.com/acme/release/...`,
+  `api.github.com/repos/acme/release/...`, `codeload.github.com/acme/release/...`,
+  and the GitLab, Bitbucket and Codeberg equivalents).
+- `./src/a.ts`, `././src/a.ts` and `src//a.ts` against `src/a.ts`.
+- The `Corroboration` result has a new field, `groups`. Code that compares a
+  whole result with deep equality sees the new field.
+- `Signal.origin` or `Signal.derivedFrom` of the wrong type, or empty or
+  invisible, throws `TypeError` (`null` is not "absent"), like the other
+  fields. `corroborate` also throws `TypeError` for an `options` that is not an
+  object or an `inferOrigins` that is not a boolean.
+- Page identity: the three URL folds listed under Fixed. Sources that differed
+  only in percent-escape hex case, a trailing host dot or an empty query used to
+  count as two; they now count as one, so a verdict that relied on that can drop
+  from `'confirmed'` to `'likely'`. Path case, a trailing slash, a query with
+  content, a non-default port, `%2F` versus `/`, and `%41` versus `A` are still
+  different pages (see the origin changes above for when pages still count once).
+- Validation: a `source` that is only U+FFFC, private-use, unassigned or
+  base-less combining characters is rejected (see Fixed). A letter next to
+  any of them is still accepted.
+- `tsconfig.json` now includes `test/` so the verdict table is type-checked
+  and linted; the build still compiles only `src/`.
+
 ### Fixed
 
+- A host made of a very long run of dots took quadratic time (about 0.4 s at
+  20,000 dots and 6 s at 80,000): the trailing-dot step used a suffix regex.
+  It is now a backward scan, and hosts over 253 characters are not analyzed
+  further. Scaling tests cover it.
 - **One page no longer counts as several sources through URL spelling.** For
   `http(s)://` sources, these now fold into one identity: the letter case of a
   percent escape (`%c3%a9` and `%C3%A9`), a trailing dot on the host
@@ -25,25 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pool or a ratio of 0.6 or more is `'strong'` with structural read access and
   `'partial'` without it. The code did not change.
 
-### Changed (behavior)
-
-- Source identity: the three URL folds above. Sources that differed only in
-  percent-escape hex case, a trailing host dot or an empty query used to count
-  as two; they now count as one, so a verdict that relied on that can drop
-  from `'confirmed'` to `'likely'`. Nothing else about URL identity changed:
-  path case, a trailing slash, a query with content, a non-default port,
-  `%2F` versus `/`, and `%41` versus `A` stay distinct.
-- Validation: a `source` that is only U+FFFC, private-use, unassigned or
-  base-less combining characters is rejected (see Fixed). A letter next to
-  any of them is still accepted.
-- `tsconfig.json` now includes `test/` so the verdict table is type-checked
-  and linted; the build still compiles only `src/`.
-
 ### Documented
 
 - The fragment is dropped on every `http(s)://` URL, so hash-routed
   single-page app pages (`#/inbox`) and line anchors (`#L10`) fold into one
-  source. The README now says so and gives a workaround.
+  page. The README says so; to keep such pages apart, declare a different
+  `origin` for each.
 - `coverageOf` has a cliff at 30 units: `coverageOf(1, 30, true)` is
   `'strong'` and `coverageOf(1, 31, true)` is `'thin'`, so a very small sample
   of a small pool can reach `'confirmed'`. The README states the exact
@@ -54,13 +131,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A single textual contradiction turns a supported claim into `'mixed'` even
   though a textual signal can never confirm. This asymmetry is by design.
 - Lone surrogates and U+FFFD are still accepted as sources.
-
-### Added
-
-- `test/verdict-table.test.ts`: a named verdict regression table (source
-  identity, the non-textual gate, blank sources, `coverageOf`, README
-  examples) and a seeded 15,000-case fuzz checked against an independent
-  oracle.
 
 ## [0.2.1] - 2026-10-07
 

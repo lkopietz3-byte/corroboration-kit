@@ -2,15 +2,26 @@
 
 **[Try it in your browser →](https://lkopietz3-byte.github.io/honesty-kits/#corroboration-kit)** · Part of [honesty kits](https://github.com/lkopietz3-byte/honesty-kits), a family of small checks for the claims an AI product makes.
 
-A small, dependency-free function for rule-based grading of caller-supplied
-signals about a claim, using caller-assigned source labels and coverage. Its
-`'confirmed'` verdict means the supplied signals passed those rules; it is
-not independent factual verification.
+**Who it is for.** Engineers who already collect typed evidence about a claim
+(scanner findings, data-QA checks, the sources behind an AI answer) and want
+one small, readable rule for how strongly the claim stands. It is a counting
+core: it takes the signals you collected and labeled, and returns a verdict you
+can explain line by line.
 
-It is not a fact-checker, a search engine, or a scoring model. It takes
-signals you already collected — from wherever you collect them — and applies
-a fixed set of rules for turning them into a verdict bounded by the coverage
-you report.
+**What `'confirmed'` means.** At least two *independent origins* agree, at
+least one of the agreeing signals is not just text (it is `structural`,
+`behavioral` or `declarative`), and the sample you report is not thin. An
+origin is a publisher, a repository, a dataset or an author, so two pages of
+one site, two files of one repository, and a copy next to the thing it was
+copied from each count once. The library finds the obvious cases from URLs,
+offline, and you declare the rest with `origin` and `derivedFrom`. The result
+lists which sources were counted together and why, so you can check it.
+
+It does not verify that the claim is true. It never reads a source, fetches
+anything or judges what a source says; `kind` and `vote` are your labels, and
+lineage you do not declare (a data set that quietly copies another) is
+invisible to it. `'confirmed'` means the signals you supplied passed these
+counting rules.
 
 ```ts
 import { corroborate, coverageOf } from 'corroboration-kit'
@@ -86,8 +97,9 @@ directly at one specific, documented, cited failure in a close cousin of
 this exact problem.
 
 Two other rules follow the same standard of not overstating what was found:
-independence is counted by **distinct source artifact**, not by number of
-checks run (grepping the same file three times is one signal, not three),
+independence is counted by **distinct origin**, not by number of checks run
+or strings written (grepping the same file three times is one signal, and so
+are two pages of one site),
 and coverage of the evidence pool is a **ceiling** on the verdict, not an
 input averaged in — a scan that only sampled a sliver of a large pool cannot
 land on `'confirmed'` regardless of how clean its signals look, and a null
@@ -157,15 +169,15 @@ interface Signal {
 ```
 
 - `source` is what independence is counted against. Two `Signal`s with the
-  same `source` count as **one** distinct source, however many of them
-  there are — so re-running the same check, or running several checks
-  against one document, never manufactures extra independence. Two `source`
-  strings are folded into the same identity when the only difference is
-  surrounding whitespace, Unicode normalization (NFC vs NFD — how macOS and
-  Linux can spell the same accented file name differently), or, for an
-  `http(s)://` URL, one of these:
+  same `source` count as **one** distinct source, however many of them there
+  are, so re-running the same check, or running several checks against one
+  document, never manufactures extra independence. Two `source` strings are
+  folded into the same page when the only difference is surrounding
+  whitespace, Unicode normalization (NFC vs NFD, how macOS and Linux can spell
+  the same accented file name differently), or, for an `http(s)://` URL, one
+  of these:
 
-  | Folded (one source) | Example |
+  | Folded (one page) | Example |
   | --- | --- |
   | the fragment | `https://a.example/doc#s1` and `https://a.example/doc#s2` |
   | scheme and host case | `HTTPS://A.Example/x` and `https://a.example/x` |
@@ -175,24 +187,127 @@ interface Signal {
   | an empty query | `https://a.example/x?` and `https://a.example/x` |
   | the letter case of a percent escape | `/caf%c3%a9` and `/caf%C3%A9` |
 
-  Everything else is kept distinct, because it can name a different artifact:
-  path case, a trailing slash on a path, a query string that has content
-  (including the order of its pairs), a non-default port, `%2F` versus `/`,
-  `%41` versus `A`, `www.` versus the bare host, `http` versus `https`, and
-  any string that is not an `http(s)://` URL (a file name's `%2f` and `%2F`
-  are different files). **The fragment is dropped on every `http(s)://` URL,
-  including a hash route such as `https://app.example/#/reports/2023`, so
-  two pages of a hash-routed single-page app, or two line anchors in one code
-  host file, are counted as one source.** If your sources look like that,
-  move the route out of the fragment before calling (for example
-  `https://app.example/__route__/reports/2023`). `source` must be a string
-  that shows something; `corroborate` throws `TypeError` otherwise.
+  For a plain id that does not start with a scheme (a file path), a run of
+  slashes and a leading `./` are folded too: `./src//a.ts` is `src/a.ts`. Case
+  and backslashes are not (`README.md` and `readme.md` are different files on
+  some systems), and a string with a scheme (`db://t/1`, `file:///a`) is left
+  as written.
+
+  Everything else is a different **page**: path case, a trailing slash on a
+  path, a query string that has content (including the order of its pairs), a
+  non-default port, `%2F` versus `/`, `%41` versus `A`, `www.` versus the bare
+  host, `http` versus `https`. Different pages can still share an **origin**,
+  and the origin is what is counted; see [Origins](#origins-what-counts-as-one-source).
+  **The fragment is dropped on every `http(s)://` URL, including a hash route
+  such as `https://app.example/#/reports/2023`, so two pages of a hash-routed
+  single-page app, or two line anchors in one code host file, are one page.**
+  `source` must be a string that shows something; `corroborate` throws
+  `TypeError` otherwise.
+- `origin` (optional) names the origin this source belongs to, in your own
+  words: a publisher, a repository, a dataset, an author. Signals that declare
+  the same `origin` count once. A signal that declares an `origin` is not
+  grouped by its URL, so this is also how to keep two pages of one host apart.
+  Compared after trimming and Unicode NFC, otherwise exactly (case matters).
+  To name a repository or a site, write it as a URL
+  (`https://github.com/acme/release`) so it is read with the same rules as a
+  `source`. Must be a string that shows something; `null` and `''` throw.
+- `derivedFrom` (optional) lists what this source was copied or derived from,
+  each entry read like an `origin` (a label or a URL). Sources that share an
+  upstream, and a copy together with the signal it came from, count once. An
+  entry also matches a signal whose `source` is that entry. Must be an array
+  of strings that show something; anything else throws `TypeError`.
 - `kind` is assigned by the caller. `'textual'` means a text/keyword/pattern
   match. The other three kinds are meant for anything that isn't just text
   matching text: a structural read (a schema, a directory listing, a parsed
   AST), a behavioral observation (something actually run or watched), or a
   declarative value (a config flag, a field in a manifest, a database
   record). Only non-`'textual'` signals can unlock `'confirmed'`.
+
+### Origins: what counts as one source
+
+`corroborate` counts **origins**. Two signals share an origin, and count once,
+when any of these holds. The result's `groups` says which one applied.
+
+| Rule | When | Example |
+| --- | --- | --- |
+| `same-page` | spellings of one page | `https://a.example/doc#s1` and `HTTPS://A.EXAMPLE/doc` |
+| `declared-origin` | the signals declare the same `origin` | two copies, both `origin: 'country-dataset'` |
+| `derived-from` | the signals share a `derivedFrom` upstream, or one names the other's `source` | a tracker page with `derivedFrom: ['https://github.com/acme/release']` and a file of that repository |
+| `same-repo` | URLs into one repository on github.com, gitlab.com, bitbucket.org or codeberg.org (including raw, codeload and API hosts) | `github.com/acme/release/blob/main/a.json` and `raw.githubusercontent.com/acme/release/main/b.md` |
+| `same-site` | URLs on one host, ignoring the prefixes `www`, `m`, `mobile`, `amp`, `docs`, `blog` and `api`, the scheme and the port | `https://venue.example/menu` and `https://www.venue.example/contact` |
+| `same-domain` | URLs on hosts that share one registered domain | `https://learn.corp.example/a` and `https://support.corp.example/b` |
+
+Lineage you declare wins over inference. A signal with an `origin` is not
+grouped by its URL, and nothing you declare can split two spellings of one
+page. So the count can only go down from what 0.2.1 gave for the same input,
+never up, and you can always keep two pages apart by giving them different
+origins. `corroborate(signals, coverage, { inferOrigins: false })` turns the
+URL rules off entirely (only spellings of one page fold, as in 0.2.x), and
+declared lineage still applies.
+
+**How the URL rules decide, and what they leave alone.** Everything runs
+offline with no public-suffix list, so the rules are short and err toward
+keeping sources apart when they cannot tell:
+
+- A repository is `host/owner/name`, case-insensitive, `.git` dropped. Two
+  repositories of one owner stay apart, and so does a repository from the code
+  host's own docs site. On GitLab the repository is the path before `/-/`.
+- The registered domain is the last two labels, or the last three under a
+  country code with a known second level (`acme.co.uk`, `acme.com.au`). For a
+  country code that hands out regional names (`city.osaka.jp`, `x.on.ca`), the
+  rule cannot tell, so subdomains stay separate.
+- A host on a shared hosting platform (`github.io`, `vercel.app`,
+  `blogspot.com`, `herokuapp.com` and about fifty more) is its own origin per
+  subdomain, never merged by registered domain.
+- On sites where each page is its own publication, the **page** is the origin:
+  forum threads and social posts (reddit.com, x.com, news.ycombinator.com,
+  stackoverflow.com), writing platforms (medium.com, dev.to), shared documents
+  (docs.google.com), preprints and papers (arxiv.org, doi.org) and link
+  shorteners. A `web.archive.org/web/<timestamp>/<url>` snapshot is read as
+  the page it archives, one level deep, so a snapshot and the live page (or
+  two snapshots of one site) share an origin.
+- An IP address or a one-label host (`localhost`) is its own origin, port
+  included.
+- Mirrors under a different registered domain, a symlink, a data set that
+  copies another and a syndicated wire story are not visible from the text of a
+  URL. Declare them with `derivedFrom` or `origin`.
+
+`originOf(source)` returns the origin the URL rules give a source
+(`repo:github.com/acme/release`, `domain:corp.example`, `site:alice.github.io`,
+`page:medium.com/@alice/post`), or `undefined` if it is not an `http(s)` URL.
+`sourceIdentity(source)` returns the page identity the folds above produce.
+Use them to show or pre-group sources before calling `corroborate`.
+
+```ts
+// A tracker that copies a project's release data is not a second origin.
+const result = corroborate(
+  [
+    { source: 'https://tracker.example/product/node', kind: 'declarative', vote: 'supports', detail: 'release date matches',
+      derivedFrom: ['https://github.com/acme/release'] },
+    { source: 'https://github.com/acme/release/blob/main/schedule.json', kind: 'declarative', vote: 'supports', detail: 'start date' },
+    { source: 'https://github.com/acme/release/blob/main/README.md', kind: 'textual', vote: 'supports', detail: 'table row' },
+  ],
+  'strong',
+)
+// result.supports === 1 and result.verdict === 'likely': one origin.
+// result.groups[0].merges says why, for example:
+//   { rule: 'derived-from', key: 'https://github.com/acme/release', ... }
+//   { rule: 'same-repo', key: 'github.com/acme/release', ... }
+```
+
+### Choosing `kind` for web evidence
+
+The `'confirmed'` gate depends on the `kind` you assign, so label honestly.
+A web article, a vendor help page, a news story or a government notice that
+says the thing in prose is `'textual'`: it can support `'likely'` but never
+reach `'confirmed'` on its own. These are non-textual, because they are
+records or observations, not prose: a field in an API response or a data file
+(`declarative`), a parsed table or schema you read by structure (`structural`),
+and something you ran or watched (`behavioral`). Matching a file *name* is not
+a structural read of the file's contents; label it `'textual'`. When two
+sources disagree because they define a field differently (a planned date and
+an actual date), vote `'inconclusive'` for the one that does not measure the
+same thing instead of `'contradicts'`.
 
 ### `Coverage`
 
@@ -204,7 +319,7 @@ not any one signal.
 
 `'confirmed' | 'likely' | 'mixed' | 'not-found' | 'inconclusive'`
 
-### `corroborate(signals: Signal[], coverage: Coverage): Corroboration`
+### `corroborate(signals: Signal[], coverage: Coverage, options?: CorroborateOptions): Corroboration`
 
 The core grading function.
 
@@ -216,10 +331,34 @@ interface Corroboration {
   direction: Direction // which way the counted sources point (see below)
   coverage: Coverage
   signals: Signal[]    // the snapshot that was graded
-  supports: number     // distinct supporting SOURCES, not signal count
-  contradicts: number  // distinct contradicting SOURCES, not signal count
+  supports: number     // distinct supporting ORIGINS, not signal count
+  contradicts: number  // distinct contradicting ORIGINS, not signal count
+  groups: SourceGroup[] // which signals were counted together, and why
+}
+
+interface SourceGroup {
+  side: 'supports' | 'contradicts'
+  source: string        // the first source string of the group, as given
+  sources: string[]     // every distinct source string in the group
+  signals: number[]     // indexes into `signals`
+  merges: Array<{
+    rule: 'same-page' | 'declared-origin' | 'derived-from' | 'same-repo' | 'same-site' | 'same-domain'
+    key: string         // the shared identity: repo, host, domain, declared text
+    sources: string[]   // the source strings this reason joins
+    explanation: string // one plain sentence
+  }>
+}
+
+interface CorroborateOptions {
+  inferOrigins?: boolean // default true; false = fold spellings of one page only
 }
 ```
+
+`groups` is the audit trail. It lists the counted sources, supporting groups
+first, with one entry in `merges` per reason that joined two or more source
+strings. A group with no `merges` is a single source string. Signals that
+voted `'inconclusive'` are in no group. The explanation text escapes control
+and bidi characters from your source strings.
 
 `direction` is derived only from the two counts: `'supports'` when only
 supporting sources were counted, `'contradicts'` when only contradicting
@@ -235,7 +374,8 @@ the result is `verdict: 'confirmed'`, `supports: 0`, `contradicts: 2`. A
 consumer that shows only the verdict would read that as confirmation of the
 claim, so show the direction with it.
 
-Rules, applied in order:
+Rules, applied in order. "Source" below means one counted origin, a group in
+`groups`:
 
 1. Distinct sources voting both `'supports'` and `'contradicts'` is real
    disagreement: `'mixed'`. It is never averaged into a false middle ground.
@@ -328,6 +468,9 @@ topic, whatever your evidence pool's unit is.
 - Both `sampledUnits` and `totalUnits` must be finite numbers greater than
   0. Zero, `NaN`, or infinite values are `'thin'` — you cannot claim coverage
   for a sample that examined nothing, or over a pool whose size isn't known.
+- A value that is not a number (a string, `null`) is `'thin'` too, not a
+  `TypeError`: `coverageOf` never throws for a type problem, only for an
+  impossible count. `corroborate` throws for a wrong type.
 - A negative `sampledUnits`/`totalUnits`, or `sampledUnits` greater than
   `totalUnits`, throws `RangeError` instead of returning `'thin'`: both
   describe an impossible scan (a negative count, or sampling more than the
@@ -364,8 +507,9 @@ boxed `new String('confirmed')` or an object with a `toString`.
 
 ## Design principles
 
-- **Independence is by source, not by check.** Counting is the size of a
-  `Set` of normalized `source` identities, not `signals.length`.
+- **Independence is by origin, not by check or by string.** Counting is the
+  number of groups of signals that share an origin, not `signals.length`.
+  Folding only ever reduces a count, and lineage you declare is never second-guessed.
 - **`'confirmed'` requires a non-textual signal, symmetrically for both the
   positive and negative case.** Text repeating text is not corroboration.
 - **Disagreement is surfaced, never blended.** `'mixed'` exists so real
@@ -384,19 +528,26 @@ is honest, correctly labeled, or actually independent in reality:
   grep of the same file as `'structural'`, or labels a source's silence as
   `'contradicts'`, `corroborate` has no way to catch that — the non-textual
   gate only protects against *unlabeled* repetition, not mislabeled evidence.
-- **It trusts that two different `source` strings really are two different
-  artifacts.** Source identity is normalized for whitespace, Unicode, and a
-  few URL variations (see `Signal` above), but two different URLs that both
-  happen to mirror the same underlying wire story, or two file paths that
-  happen to be symlinks to the same file, are still counted as independent —
-  the library has no way to know that. The "Why this
-  exists" example (a text-only tool that confirmed all six distorted claims
-  in its benchmark because real coverage of the topic satisfied its
-  independence check) is a case where this library's non-textual gate keeps
-  citation count from being enough, but a caller still has to supply an
-  honestly-distinct `source` and an honestly-assigned `kind`, or even this
-  design can be defeated. Label a topic-level text match `'structural'` and
-  the same failure is back.
+- **It sees only the lineage it can read or you declare.** Origins come from
+  the text of a URL and from `origin` and `derivedFrom`. A mirror under a
+  different registered domain, a symlink, a data set that copies another (a
+  tracker built from a project's release data, three country files that all
+  trace to one standard) and a syndicated wire story look independent unless
+  you say otherwise, and the result is then stronger than the evidence. The
+  "Why this exists" example (a text-only tool that confirmed all six distorted
+  claims in its benchmark because real coverage of the topic satisfied its
+  independence check) is a case where the non-textual gate keeps citation count
+  from being enough, but a caller still has to supply honestly-distinct sources,
+  honest lineage and an honestly-assigned `kind`, or even this design can be
+  defeated. Label a topic-level text match `'structural'` and the same failure
+  is back.
+- **Inference can merge sources that are independent.** The built-in lists are
+  short and cannot know every platform. A host on a shared platform that is
+  not listed (a new hosting service where each customer has a subdomain), a
+  university or company host that carries many authors' personal pages, and a
+  vendor's user forum next to the vendor's own site are each counted as one
+  origin. That makes a verdict weaker, never stronger. Give each page its own
+  `origin` to keep them apart, or pass `{ inferOrigins: false }`.
 - **It has no search, no fetch, no parsing, and does no stance detection of
   its own.** It never reads the claim's text, a source's content, or
   determines what a source actually says — `vote` is entirely the caller's
@@ -419,7 +570,8 @@ is honest, correctly labeled, or actually independent in reality:
   `http(s)://` URL, because a fragment is never sent to a server. For a
   single-page app that routes on the fragment (`#/inbox`, `#!/report/7`), or
   a code host that anchors lines (`#L10`), different pages or lines fold into
-  one source. See `Signal` above for the workaround.
+  one page, and pages of one host are one origin anyway. If they really are
+  separate publications, declare a different `origin` for each.
 - **`coverageOf` has a cliff at 30 units.** A pool of 30 or fewer units is
   `'strong'` for any sample with structural read access, so one unit of 30
   can unlock `'confirmed'`. See `coverageOf` above for the exact boundary and a

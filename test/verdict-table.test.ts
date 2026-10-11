@@ -40,7 +40,10 @@ const sig = (source: string, kind: SignalKind = 'textual', vote: Vote = 'support
  * are two, it is 2 sources / 'confirmed'.
  */
 function pair(a: string, b: string): { supports: number; verdict: Verdict } {
-  const r = corroborate([sig(a, 'textual'), sig(b, 'structural')], 'strong')
+  // The FOLD, DISTINCT and LIMIT rows pin ARTIFACT identity (which spellings are
+  // one page), so origin inference is off here. The same pairs with inference on
+  // are pinned in test/origins-table.test.ts, with every changed verdict listed.
+  const r = corroborate([sig(a, 'textual'), sig(b, 'structural')], 'strong', { inferOrigins: false })
   return { supports: r.supports, verdict: r.verdict }
 }
 const ONE = { supports: 1, verdict: 'likely' }
@@ -439,10 +442,13 @@ describe('verdict table: seeded fuzz against an independent oracle', () => {
       })
       const coverage = pick(COVS)
       const signals: Signal[] = picked.map((p) => sig(p.source, p.kind, p.vote))
-      const got = corroborate(signals, coverage)
+      // The classes above are artifacts that all live on one host, so the oracle
+      // counts artifacts: origin inference is off. Origin classes are fuzzed in
+      // test/origins-table.test.ts.
+      const got = corroborate(signals, coverage, { inferOrigins: false })
       const want = oracle(picked, coverage)
       const shuffled = [...signals].sort(() => rnd() - 0.5)
-      const again = corroborate(shuffled, coverage)
+      const again = corroborate(shuffled, coverage, { inferOrigins: false })
       const problems: string[] = []
       if (got.verdict !== want.verdict) problems.push(`verdict ${got.verdict} != ${want.verdict}`)
       if (got.direction !== want.direction) problems.push(`direction ${got.direction} != ${want.direction}`)

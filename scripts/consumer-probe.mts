@@ -7,11 +7,17 @@ import {
   corroborate,
   coverageOf,
   coverageLabel,
+  originOf,
+  sourceIdentity,
   verdictLabel,
+  type CorroborateOptions,
   type Coverage,
   type Corroboration,
   type Direction,
+  type MergeRule,
   type Signal,
+  type SourceGroup,
+  type SourceMerge,
   type SignalKind,
   type Vote,
   type Verdict,
@@ -44,6 +50,16 @@ const coverageText: string = coverageLabel(echoedCoverage)
 // undefined`), which matters for exactOptionalPropertyTypes consumers.
 const firstSource: string = graded[0]?.source ?? verdictText
 
+// Lineage fields and the audit trail are part of the public shape too.
+const lineage: Signal = { source: 'copy', kind: 'textual', vote: 'supports', detail: 'd', origin: 'o', derivedFrom: ['original'] }
+const options: CorroborateOptions = { inferOrigins: false }
+const traced: Corroboration = corroborate([lineage], coverage, options)
+const group: SourceGroup | undefined = traced.groups[0]
+const merge: SourceMerge | undefined = group?.merges[0]
+const rule: MergeRule | undefined = merge?.rule
+const origin: string | undefined = originOf('https://example.com/a')
+const identity: string = sourceIdentity('a')
+
 // Reference every value so an unused-variable strict check cannot fail this
 // probe for a reason unrelated to the package's public types.
-void [coverage, verdict, direction, echoedCoverage, supports, contradicts, coverageText, firstSource]
+void [coverage, verdict, direction, echoedCoverage, supports, contradicts, coverageText, firstSource, rule, origin, identity]
