@@ -1,4 +1,4 @@
-# corroboration-kit — agent instructions
+# corroboration-kit: agent instructions
 
 A domain-agnostic evidence-corroboration grader: distinct-source independence, a non-textual-signal gate for 'confirmed', a coverage ceiling, and disagreement surfaced as 'mixed' instead of averaged away.
 
@@ -29,6 +29,6 @@ See [docs/REVIEW_READINESS.md](docs/REVIEW_READINESS.md) for milestone review ca
 
 ## Code Review Rules
 
-- Count independence by normalized source artifact, not the number of signals. Preserve the documented whitespace, Unicode and selected URL normalization so the same source counts once.
+- Count independence by origin, not the number of signals: the normalized source, a declared `origin` or `derivedFrom`, and (by default) the origin inferred from an http(s) URL. Preserve the documented whitespace, Unicode and selected URL normalization so the same page counts once. Merging may only lower a count; declared lineage beats inference; the inference lists stay short and conservative.
 - Preserve the symmetric confirmed gate: at least two distinct sources and one non-textual signal are required. Disagreement stays mixed; confirmed with direction contradicts means the claim is contradicted.
 - Keep coverage as a verdict ceiling: thin coverage cannot confirm, and no counted evidence is inconclusive under thin coverage but not-found otherwise. Invalid labels fail closed, and caller-supplied labels are not independent verification.

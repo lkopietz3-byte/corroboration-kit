@@ -2,8 +2,12 @@
 
 ## Invariants (the promises the code is tested against)
 
-1. Independence is counted by distinct source **artifact**, never by signal
-   count. Two signals sharing one (normalized) `source` count once.
+1. Independence is counted by distinct **origin**, never by signal count. Two
+   signals count once when they share a (normalized) `source`, a declared
+   `origin`, a `derivedFrom` upstream, or, with URL inference on (the
+   default), a repository, a host (ignoring www, m, mobile, amp, docs, blog and
+   api) or a registered domain. Every way of merging only lowers a count, so a
+   count can never exceed the number of distinct normalized `source` values.
 2. `'confirmed'` is unreachable from `'textual'` signals alone, symmetrically
    for `supports` and `contradicts`; it requires 2+ distinct sources and at
    least one non-`'textual'` kind.
@@ -32,7 +36,22 @@
     only from the two counted-source totals and never changes the verdict. A
     `'confirmed'` verdict with direction `'contradicts'` means the evidence
     confirms the claim is false.
-11. Error messages never call into caller values (no `toString`, `toJSON` or
+11. Declared lineage is validated and read like the required fields: `origin`
+    and each `derivedFrom` entry must be a string that shows something,
+    `derivedFrom` an array (read once, copied), anything else is a `TypeError`
+    and `null` is not "absent". A declared `origin` replaces URL inference for
+    that signal but can never split two spellings of one page. `inferOrigins`
+    must be a boolean.
+12. `corroborate` returns `groups`, a partition of the counted signals: every
+    `supports` or `contradicts` signal is in exactly one group of its own side,
+    `supports` and `contradicts` equal the number of groups per side, and an
+    `inconclusive` signal is in none. The partition does not depend on input
+    order.
+13. Work is linear in the total size of the input (sources, lineage entries).
+    No unanchored regex retries over untrusted text, hosts longer than 253
+    characters are not analyzed, and only the first path segments of a code
+    host URL are read. Scaling tests assert this with CPU time.
+14. Error messages never call into caller values (no `toString`, `toJSON` or
     getter) and escape control and bidi characters, so building one cannot
     throw and cannot forge log structure. The label helpers accept only
     primitive strings.
@@ -60,9 +79,9 @@ runs the consumer probes) on Node 20, 20.19.0, 22, 22.12.0 and 24. 20.19.0 and
 ## What this is NOT certified to do
 
 See the README's "Honest limits" section. In short: it trusts the caller's
-`kind` and `vote` labels completely, it does not verify that two `source`
-strings naming different artifacts are genuinely independent in reality
-beyond the normalization rules above, and it has no search, fetch, or
+`kind` and `vote` labels completely, it does not verify that two sources are
+genuinely independent in reality beyond the normalization, URL inference and
+declared lineage described above, and it has no search, fetch, or
 stance-detection logic of its own. `'confirmed'` and `'not-found'` describe
 what this library's counting rules concluded, not an external certification.
 
@@ -72,7 +91,7 @@ CI runs [`arethetypeswrong`](https://github.com/arethetypeswrong/arethetypeswron
 (`npm run attw`, which is `attw --pack . --ignore-rules cjs-resolves-to-esm`)
 against the packed tarball after the build step. The `cjs-resolves-to-esm` rule is ignored on
 purpose: this is an ESM-only package (`"type": "module"`, no `require` entry point), so a
-CommonJS consumer must use Node's `require(esm)` support (Node >=20.19 or >=22.12 — see
+CommonJS consumer must use Node's `require(esm)` support (Node >=20.19 or >=22.12; see
 "Runtime support policy" below) rather than a native `require`. A dual CJS+ESM build was
 rejected to avoid the dual-package hazard (two separately-identified copies of the same module,
 with broken `instanceof` checks and duplicated module state across the CJS and ESM entry
@@ -90,7 +109,7 @@ accident. To release: add a dated entry to `CHANGELOG.md`, bump `version` in
 npm's unpublish policy ([official text](https://docs.npmjs.com/policies/unpublish)) is
 deliberately narrow. Within 72 hours of publishing a new package, a version can be unpublished
 only if no other published package depends on it. After 72 hours, unpublishing also requires
-fewer than 300 downloads in the last week and a single owner or maintainer — most released
+fewer than 300 downloads in the last week and a single owner or maintainer; most released
 versions won't qualify either way. A given `name@version` can never be reused, published or
 not, even after an unpublish. Treat unpublish as unavailable: prefer fixing forward with a new
 patch version, and use `npm deprecate <name>@"<range>" "<message>"` to warn consumers off a
@@ -101,7 +120,7 @@ This package has no server component and no migration state to reverse either wa
 ### Runtime support policy
 
 - **Supported (recommended for production):** Node 22 and 24 LTS; Node 26 current.
-- **Compatibility-tested:** Node 20. Node 20 is end-of-life — nodejs.org's release page
+- **Compatibility-tested:** Node 20. Node 20 is end-of-life: nodejs.org's release page
   (<https://nodejs.org/en/about/previous-releases>) lists it as `EOL`, with its final release
   dated Mar 24, 2026. The `compat` job in `verify.yml` still runs on Node 20 to catch
   regressions, but that runtime gets no security fixes upstream; don't run production traffic

@@ -261,6 +261,9 @@ describe('source identity: one artifact counts once however it is spelled', () =
   // strings and report how many distinct artifacts the kit saw. If the two
   // strings are one artifact the bar is not met ('likely'); if they are two,
   // the pair confirms.
+  // These tables pin ARTIFACT identity: which spellings fold into one page.
+  // Whether two different pages share an origin is a separate question with its
+  // own table (test/origins-table.test.ts), so origin inference is off here.
   const countFor = (a: string, b: string) => {
     const result = corroborate(
       [
@@ -268,6 +271,7 @@ describe('source identity: one artifact counts once however it is spelled', () =
         { source: b, kind: 'structural', vote: 'supports', detail: 'second read' },
       ],
       'strong',
+      { inferOrigins: false },
     )
     return { supports: result.supports, verdict: result.verdict }
   }
