@@ -1,4 +1,4 @@
-# corroboration-kit — agent instructions
+# corroboration-kit: agent instructions
 
 A domain-agnostic evidence-corroboration grader: distinct-source independence, a non-textual-signal gate for 'confirmed', a coverage ceiling, and disagreement surfaced as 'mixed' instead of averaged away.
 

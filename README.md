@@ -37,7 +37,7 @@ const result = corroborate(
 )
 
 // coverage is 'thin' (40 of 400 units is below the 15% partial threshold),
-// so result.verdict is 'likely' here — even though the two signals are from
+// so result.verdict is 'likely' here, even though the two signals are from
 // distinct sources and one is non-textual, which would otherwise be enough
 // to reach 'confirmed'. That's the coverage ceiling: a thin sample caps the
 // verdict no matter how the signals it did find line up.
@@ -56,7 +56,7 @@ Most "corroboration" logic in the wild counts **citations**, not
 public.
 
 [corroborate-mcp](https://github.com/chefcohen/corroborate-mcp) is a real,
-open-source MCP server built for exactly this problem — an honest,
+open-source MCP server built for exactly this problem: an honest,
 zero-API-key claim-corroboration tool with verdict tiers `CONFIRMED` (2+
 independent origins), `SINGLE_SOURCE`, and `UNCORROBORATED`. It's a
 well-built tool, and unusually for the category, it publishes its own
@@ -66,9 +66,9 @@ reports one line plainly:
 
 > **Distorted claims falsely CONFIRMED: 6/6**
 
-All six deliberately distorted test claims — real, currently-reported topics
+All six deliberately distorted test claims (real, currently-reported topics
 with a false specific detail swapped in, such as reporting that Samsung had
-cancelled a phone it had in fact just unveiled — came back `CONFIRMED`. The
+cancelled a phone it had in fact just unveiled) came back `CONFIRMED`. The
 tool's own honest-limitations section explains why: its
 entire evidence pipeline is text. It searches news text (Google News RSS,
 GDELT, Hacker News), gates relevance by keyword overlap in headlines, and
@@ -76,7 +76,7 @@ clusters near-duplicate headlines into "independent origins." Every signal in
 that pipeline is textual, and every corroboration decision is made from
 text alone. So when a topic has real, independent textual coverage but the
 *specific* claim about it is wrong, nothing in the pipeline can tell the
-difference — the independence check is satisfied by topical text volume,
+difference: the independence check is satisfied by topical text volume,
 not by any signal that actually verifies the distorted detail. Multiple
 outlets independently writing about the real event is not multiple outlets
 independently confirming the false detail grafted onto it, but a
@@ -87,8 +87,8 @@ close: **`confirmed` is structurally unreachable from textual signals alone.**
 Two, five, or fifty text matches from distinct sources still cap at
 `'likely'` here, because a `Signal` with `kind: 'textual'` can never by
 itself clear the bar. Reaching `'confirmed'` requires at least one signal of
-a genuinely different kind — `'structural'`, `'behavioral'`, or
-`'declarative'` — something that isn't just more text saying the same thing,
+a genuinely different kind (`'structural'`, `'behavioral'`, or
+`'declarative'`), something that isn't just more text saying the same thing,
 because more text saying the same thing is precisely what corroborate-mcp's
 own published benchmark shows can be wrong six times out of six. This isn't
 a claim that this library is "more rigorous" in the abstract; it's one
@@ -101,7 +101,7 @@ independence is counted by **distinct origin**, not by number of checks run
 or strings written (grepping the same file three times is one signal, and so
 are two pages of one site),
 and coverage of the evidence pool is a **ceiling** on the verdict, not an
-input averaged in — a scan that only sampled a sliver of a large pool cannot
+input averaged in: a scan that only sampled a sliver of a large pool cannot
 land on `'confirmed'` regardless of how clean its signals look, and a null
 result from a thin sample is `'inconclusive'`, not `'not-found'`, because you
 cannot prove a negative from a small sample.
@@ -111,7 +111,7 @@ This library was extracted from a code-honesty scanner
 dependency manifests, sampled source files, and directory structure) into a
 standalone, domain-agnostic form. Nothing here is specific to code: the same
 five rules apply to grading a claim from news sources, a hypothesis from lab
-results, or a support ticket from log lines — anywhere you have named,
+results, or a support ticket from log lines: anywhere you have named,
 distinct evidence sources of more than one kind.
 
 ## When not to use it
@@ -119,8 +119,9 @@ distinct evidence sources of more than one kind.
 - You need something to actually go find or fetch evidence. This library
   grades signals you already collected; it has no search, no crawling, no
   I/O of any kind.
-- You want a numeric confidence score. Verdicts are the five fixed labels
-  above, not a 0–1 probability — see "Honest limits" below.
+- You want a numeric confidence score. Verdicts are the five fixed
+  [`Verdict`](#verdict) labels, not a 0 to 1 probability; see "Honest limits"
+  below.
 - You need stance or fact-level verification of what a source says, not just
   whether independent sources exist. A signal's `vote` is whatever the
   caller decided it means; this library does not read text or judge claims.
@@ -165,6 +166,8 @@ interface Signal {
   kind: 'textual' | 'structural' | 'behavioral' | 'declarative'
   vote: 'supports' | 'contradicts' | 'inconclusive'
   detail: string    // free-form explanation of what this signal found
+  origin?: string   // your name for the origin this source belongs to
+  derivedFrom?: readonly string[] // what this source was copied or derived from
 }
 ```
 
@@ -264,7 +267,9 @@ keeping sources apart when they cannot tell:
   forum threads and social posts (reddit.com, x.com, news.ycombinator.com,
   stackoverflow.com), writing platforms (medium.com, dev.to), shared documents
   (docs.google.com), preprints and papers (arxiv.org, doi.org) and link
-  shorteners. A `web.archive.org/web/<timestamp>/<url>` snapshot is read as
+  shorteners. On those sites only the prefixes `www`, `m`, `mobile`, `amp`,
+  `old` and `np` are ignored, so `old.reddit.com` and `www.reddit.com` spellings
+  of one thread are one page. A `web.archive.org/web/<timestamp>/<url>` snapshot is read as
   the page it archives, one level deep, so a snapshot and the live page (or
   two snapshots of one site) share an origin.
 - An IP address or a one-label host (`localhost`) is its own origin, port
@@ -291,9 +296,8 @@ const result = corroborate(
   'strong',
 )
 // result.supports === 1 and result.verdict === 'likely': one origin.
-// result.groups[0].merges says why, for example:
+// result.groups[0].merges says why:
 //   { rule: 'derived-from', key: 'https://github.com/acme/release', ... }
-//   { rule: 'same-repo', key: 'github.com/acme/release', ... }
 ```
 
 ### Choosing `kind` for web evidence
@@ -312,7 +316,7 @@ same thing instead of `'contradicts'`.
 
 ### `Coverage`
 
-`'strong' | 'partial' | 'thin'` — how much of the total evidence pool the
+`'strong' | 'partial' | 'thin'`: how much of the total evidence pool the
 signals being graded were drawn from. This describes the scan as a whole,
 not any one signal.
 
@@ -381,7 +385,7 @@ Rules, applied in order. "Source" below means one counted origin, a group in
 1. Distinct sources voting both `'supports'` and `'contradicts'` is real
    disagreement: `'mixed'`. It is never averaged into a false middle ground.
 2. Only contradicting sources exist: the negative case reaches a
-   confirmed-bad verdict under the same bar as the positive case — 2+
+   confirmed-bad verdict under the same bar as the positive case: 2+
    distinct sources **and** at least one non-textual one. Short of that,
    it's `'likely'`.
 3. No supporting sources at all: `'not-found'` under adequate coverage,
@@ -462,12 +466,12 @@ message cannot forge a log line or send a terminal escape.
 ### `coverageOf(sampledUnits: number, totalUnits: number, hadStructuralReadAccess: boolean): Coverage`
 
 A generic helper for turning "how much did I actually look at" into a
-`Coverage` level. `sampledUnits` and `totalUnits` are deliberately generic —
+`Coverage` level. `sampledUnits` and `totalUnits` are deliberately generic:
 files in a repo, documents in a corpus, records in a dataset, sources on a
 topic, whatever your evidence pool's unit is.
 
 - Both `sampledUnits` and `totalUnits` must be finite numbers greater than
-  0. Zero, `NaN`, or infinite values are `'thin'` — you cannot claim coverage
+  0. Zero, `NaN`, or infinite values are `'thin'`, because you cannot claim coverage
   for a sample that examined nothing, or over a pool whose size isn't known.
 - A value that is not a number (a string, `null`) is `'thin'` too, not a
   `TypeError`: `coverageOf` never throws for a type problem, only for an
@@ -527,7 +531,7 @@ is honest, correctly labeled, or actually independent in reality:
 
 - **It trusts `kind` and `vote` completely.** If a caller mislabels a second
   grep of the same file as `'structural'`, or labels a source's silence as
-  `'contradicts'`, `corroborate` has no way to catch that — the non-textual
+  `'contradicts'`, `corroborate` has no way to catch that: the non-textual
   gate only protects against *unlabeled* repetition, not mislabeled evidence.
 - **It sees only the lineage it can read or you declare.** Origins come from
   the text of a URL and from `origin` and `derivedFrom`. A mirror under a
@@ -549,9 +553,15 @@ is honest, correctly labeled, or actually independent in reality:
   vendor's user forum next to the vendor's own site are each counted as one
   origin. That makes a verdict weaker, never stronger. Give each page its own
   `origin` to keep them apart, or pass `{ inferOrigins: false }`.
+- **A GitLab project id that double-encodes a slash is merged with the
+  single-encoded one.** `/api/v4/projects/group%252Fproj` and
+  `/api/v4/projects/group%2Fproj` are read as the same repository, so two
+  projects that differ only that way count as one origin. This can only lower
+  a confirmation count, never raise it. A numeric project id is not guessed at
+  all. Declare an `origin` per project to keep such projects apart.
 - **It has no search, no fetch, no parsing, and does no stance detection of
   its own.** It never reads the claim's text, a source's content, or
-  determines what a source actually says — `vote` is entirely the caller's
+  determines what a source actually says. `vote` is entirely the caller's
   judgment call, made before `corroborate` is ever invoked.
 - **`'confirmed'` and `'not-found'` are not certifications.** They mean "met
   this library's bar for its counting rules," not "true" or "false" in any
@@ -564,7 +574,7 @@ is honest, correctly labeled, or actually independent in reality:
 - **Invisible characters inside a longer `source` still make it distinct.**
   Only a `source` that shows nothing at all is rejected. `'a'` and
   `'a\u200b'` are counted as two artifacts, which errs toward a false
-  "independent" (see the note on under-merging above), so canonicalize
+  "independent" (the same direction as the lineage limit above), so canonicalize
   sources before calling if your source strings can carry invisible
   characters.
 - **Hash-routed pages are one source.** The fragment is dropped on every

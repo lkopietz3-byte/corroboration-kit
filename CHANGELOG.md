@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - unreleased
+
+Minor release. `'confirmed'` now counts independent origins instead of
+different strings, so some inputs that were `'confirmed'` in 0.2.x are now
+`'likely'`. A verdict can only get stricter (`'confirmed'` to `'likely'`), never
+more generous, and a few malformed inputs now throw. New exports: `originOf`,
+`sourceIdentity`. Still no runtime dependencies.
+
+### Breaking changes
+
+Each item says what to do about it.
+
+- **Pages of one site or repository count once by default.** Two pages of one
+  host, hosts that share a registered domain, and two URLs into one repository
+  on github.com, gitlab.com, bitbucket.org or codeberg.org are now one source,
+  so a verdict that was `'confirmed'` on them is now `'likely'`. Migration: if
+  the pages really are independent, give each its own `origin`; to keep the
+  0.2.x counts, pass `corroborate(signals, coverage, { inferOrigins: false })`.
+- **Three more URL spellings are one page, even with `inferOrigins: false`.**
+  The letter case of a percent escape (`%c3%a9` and `%C3%A9`), a trailing dot on
+  the host, and an empty query (`x?` and `x`) used to count as two sources.
+  Migration: none needed; these were one page cited twice. A verdict that relied
+  on the double count drops to `'likely'`.
+- **Plain file ids fold `./` and runs of slashes.** `./src//a.ts` and `src/a.ts`
+  are now one source. Migration: none needed for the same file; spell files
+  differently on purpose only if you need them apart (declare an `origin`).
+- **New `TypeError`s.** `origin` or `derivedFrom` of the wrong type, empty or
+  invisible (including `null`), an `options` that is not an object, and an
+  `inferOrigins` that is not a boolean now throw. A `source` made only of
+  U+FFFC, private-use, unassigned or base-less combining characters now throws
+  too. Migration: omit the field instead of passing `null` (use `undefined`),
+  pass a real boolean, and clean junk source strings before calling.
+- **The result has a new field, `groups`.** Code that compares a whole
+  `Corroboration` with deep equality sees it. Migration: compare `verdict`,
+  `direction`, `supports` and `contradicts`, or update the expected objects.
+
 ### Added
 
 - **Origins: `'confirmed'` now means independent origins, not different strings.**
@@ -136,6 +172,10 @@ is two again.
 - A single textual contradiction turns a supported claim into `'mixed'` even
   though a textual signal can never confirm. This asymmetry is by design.
 - Lone surrogates and U+FFFD are still accepted as sources.
+- Known limit: a GitLab project id that double-encodes a slash (`%252F`) is
+  merged with the single-encoded form (`%2F`), so two such projects can count
+  as one repository. This can only lower a confirmation count, never raise it.
+  Declare an `origin` per project to keep them apart.
 
 ## [0.2.1] - 2026-10-07
 
@@ -257,8 +297,8 @@ type, `Direction`) and no runtime dependencies.
 ### Fixed
 
 - `coverageOf` returned an ordinary-looking coverage value (e.g. `'strong'`)
-  for impossible input — `sampledUnits` greater than `totalUnits`, or either
-  argument negative — instead of surfacing the caller bug. It now throws
+  for impossible input (`sampledUnits` greater than `totalUnits`, or either
+  argument negative) instead of surfacing the caller bug. It now throws
   `RangeError` for both cases, matching `corroborate`'s own fail-closed
   validation. `NaN`/`Infinity` are unchanged (still `'thin'`: no usable
   count, not an impossible one).
