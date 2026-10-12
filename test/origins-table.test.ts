@@ -756,27 +756,41 @@ describe('origin table: scaling on hostile input', () => {
     const d = proc.cpuUsage(t)
     return (d.user + d.system) / 1000
   }
-  const best = (fn: () => void): number => Math.min(cpu(fn), cpu(fn))
+  const best = (fn: () => void): number => Math.min(cpu(fn), cpu(fn), cpu(fn))
+  // Each scaling test grows the input 4x, so linear work is about 4x and quadratic work is 16x.
+  // The limit of 10 leaves room for GC and JIT noise (CI on Node 24 measured 8.2 once) and still fails quadratic work.
+  const LINEAR_4X_LIMIT = 10
+
+  it('S00 the harness flags quadratic work at the 4x limit', { timeout: 120_000 }, () => {
+    const quadratic = (n: number) => () => {
+      let acc = 0
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) acc = (acc + i * j) | 0
+      if (acc === 0.5) throw new Error('unreachable')
+    }
+    const small = best(quadratic(2_000))
+    const large = best(quadratic(8_000))
+    expect(large / Math.max(small, 1)).toBeGreaterThan(LINEAR_4X_LIMIT)
+  })
 
   it('S01 a host that is a long run of dots scales roughly linearly', { timeout: 120_000 }, () => {
     const run = (n: number) => () => corroborate([sig(`https://a${'.'.repeat(n)}b/x`), sig(`https://c${'.'.repeat(n)}d/x`)], 'strong')
     const small = best(run(20_000))
     const large = best(run(80_000))
-    expect(large / Math.max(small, 1)).toBeLessThan(8)
+    expect(large / Math.max(small, 1)).toBeLessThan(LINEAR_4X_LIMIT)
   })
 
   it('S02 many sources scale roughly linearly', { timeout: 120_000 }, () => {
     const run = (n: number) => () => corroborate(Array.from({ length: n }, (_, i) => sig(`https://h${i % 977}.example/p${i}`)), 'strong')
     const small = best(run(10_000))
     const large = best(run(40_000))
-    expect(large / Math.max(small, 1)).toBeLessThan(8)
+    expect(large / Math.max(small, 1)).toBeLessThan(LINEAR_4X_LIMIT)
   })
 
   it('S03 one lineage over many signals scales roughly linearly', { timeout: 120_000 }, () => {
     const run = (n: number) => () => corroborate(Array.from({ length: n }, (_, i) => sig(`s${i}`, 'textual', 'supports', { derivedFrom: [`u${i % 5}`, `u${(i + 1) % 5}`] })), 'strong')
     const small = best(run(10_000))
     const large = best(run(40_000))
-    expect(large / Math.max(small, 1)).toBeLessThan(8)
+    expect(large / Math.max(small, 1)).toBeLessThan(LINEAR_4X_LIMIT)
   })
 
   it('S05 many shared derivedFrom identities over long sources cost the shared pairs, not the source length again', { timeout: 120_000 }, () => {
@@ -802,13 +816,13 @@ describe('origin table: scaling on hostile input', () => {
     }
     const small = best(run(4_000))
     const large = best(run(16_000))
-    expect(large / Math.max(small, 1)).toBeLessThan(8)
+    expect(large / Math.max(small, 1)).toBeLessThan(LINEAR_4X_LIMIT)
   })
 
   it('S04 long percent runs and long paths on one host scale roughly linearly', { timeout: 120_000 }, () => {
     const run = (n: number) => () => corroborate([sig(`https://x.example/${'%41'.repeat(n)}`), sig(`https://x.example/${'a/'.repeat(n)}`)], 'strong')
     const small = best(run(20_000))
     const large = best(run(80_000))
-    expect(large / Math.max(small, 1)).toBeLessThan(8)
+    expect(large / Math.max(small, 1)).toBeLessThan(LINEAR_4X_LIMIT)
   })
 })
