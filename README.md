@@ -193,8 +193,8 @@ interface Signal {
   For a plain id that does not start with a scheme (a file path), a run of
   slashes and a leading `./` are folded too: `./src//a.ts` is `src/a.ts`. Case
   and backslashes are not (`README.md` and `readme.md` are different files on
-  some systems), and a string with a scheme (`db://t/1`, `file:///a`) is left
-  as written.
+  some systems), a leading `//` (a Windows network root) is kept, and a string
+  with a scheme (`db://t/1`, `file:///a`) is left as written.
 
   Everything else is a different **page**: path case, a trailing slash on a
   path, a query string that has content (including the order of its pairs), a
@@ -581,8 +581,10 @@ is honest, correctly labeled, or actually independent in reality:
   `http(s)://` URL, because a fragment is never sent to a server. For a
   single-page app that routes on the fragment (`#/inbox`, `#!/report/7`), or
   a code host that anchors lines (`#L10`), different pages or lines fold into
-  one page, and pages of one host are one origin anyway. If they really are
-  separate publications, declare a different `origin` for each.
+  one page, and pages of one host are one origin anyway. Declaring an `origin`
+  does not split them. If they really are separate publications, give each a
+  distinct non-URL `source` id (such as `app:reports/2023`) or move the route
+  into the path.
 - **`coverageOf` has a cliff at 30 units.** A pool of 30 or fewer units is
   `'strong'` for any sample with structural read access, so one unit of 30
   can unlock `'confirmed'`. See `coverageOf` above for the exact boundary and a

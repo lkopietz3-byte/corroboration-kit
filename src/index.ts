@@ -406,11 +406,15 @@ const SCHEME_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:/
 /**
  * Plain file-style ids: fold what cannot change which file is meant on any
  * platform, a run of slashes and a leading `./`. Case, backslashes, `../`,
- * a leading `/` and anything that starts with a scheme are left alone.
+ * a leading `/` (and a leading `//`, which is a UNC root) and anything that
+ * starts with a scheme are left alone.
  */
 function foldPlainPath(text: string): string {
   if (SCHEME_PREFIX.test(text)) return text
   let out = text.includes('//') ? text.replace(/\/{2,}/g, '/') : text
+  // Exactly two leading slashes is a UNC root (`//server/share`), a different
+  // place from the drive-rooted `/server/share`: keep the pair.
+  if (out !== text && text.startsWith('//') && !text.startsWith('///')) out = `/${out}`
   let i = 0
   while (out.startsWith('./', i)) i += 2
   // A lone "./" would fold to nothing: keep it as written.

@@ -31,8 +31,9 @@ Each item says what to do about it.
   Migration: none needed; these were one page cited twice. A verdict that relied
   on the double count drops to `'likely'`.
 - **Plain file ids fold `./` and runs of slashes.** `./src//a.ts` and `src/a.ts`
-  are now one source. Migration: none needed for the same file; spell files
-  differently on purpose only if you need them apart (declare an `origin`).
+  are now one source (a leading `//`, a Windows network root, is kept). Migration:
+  none needed for the same file; if you need two spellings apart on purpose, give
+  them distinct ids, since an `origin` never splits one page.
 - **New `TypeError`s.** `origin` or `derivedFrom` of the wrong type, empty or
   invisible (including `null`), an `options` that is not an object, and an
   `inferOrigins` that is not a boolean now throw. A `source` made only of

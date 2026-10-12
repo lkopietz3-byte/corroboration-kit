@@ -530,6 +530,9 @@ describe('origin table: artifact identity for plain file paths', () => {
     ['A08', 'an absolute path is not a relative one', '/src/a.ts', 'src/a.ts', TWO],
     ['A09', 'a scheme id is left alone', 'db://t/1', 'db:/t/1', TWO],
     ['A10', 'a lone dot-slash is not folded to nothing', './', '.', TWO],
+    ['A12', 'a UNC root is not a drive-rooted path', '//server/share/a.ts', '/server/share/a.ts', TWO],
+    ['A13', 'a UNC root still folds repeated interior slashes', '//server/share//a.ts', '//server/share/a.ts', ONE],
+    ['A14', 'a run of three or more leading slashes folds to one', '///a.ts', '/a.ts', ONE],
   ] as Array<[string, string, string, string, typeof ONE]>)('%s %s', (_id, _name, a, b, expected) => {
     expect(pair(a, b)).toEqual(expected)
   })
