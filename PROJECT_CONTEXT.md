@@ -1,18 +1,18 @@
-# Project context: corroboration-kit
+# Project context: @evidencekit/corroboration
 
 Mapped on **2026-09-26** from connected GitHub, Vercel, and Supabase metadata. This file is a navigation aid; verify current code and service settings before acting.
 
 ## Identity and repository settings
 
-- Repository: [lkopietz3-byte/corroboration-kit](https://github.com/lkopietz3-byte/corroboration-kit)
+- Repository: [evidencekit/corroboration](https://github.com/evidencekit/corroboration)
 - Purpose: A library that applies fixed counting rules (distinct source origins, a non-textual gate on `confirmed`, a coverage ceiling) to caller-supplied evidence signals about a claim and returns a verdict and direction. It trusts the caller's `kind`, `vote` and `source` labels and does not verify the evidence or the claim; see the README's "Honest limits".
 - GitHub visibility: **public**; default branch: **`main`**; archived: **no**.
 - Product stage, owner, production health, and GitHub protection/settings beyond the fields above: **not verified**.
 
 ## Starting points
 
-- Purpose source: [README.md](https://github.com/lkopietz3-byte/corroboration-kit/blob/main/README.md)
-- [package.json](https://github.com/lkopietz3-byte/corroboration-kit/blob/main/package.json) contains scripts and declared dependencies; check the current file before using commands.
+- Purpose source: [README.md](https://github.com/evidencekit/corroboration/blob/main/README.md)
+- [package.json](https://github.com/evidencekit/corroboration/blob/main/package.json) contains scripts and declared dependencies; check the current file before using commands.
 
 ## Service map
 

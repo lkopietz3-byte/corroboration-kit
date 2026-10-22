@@ -1,6 +1,8 @@
-# corroboration-kit
+# @evidencekit/corroboration
 
-**[Try it in your browser →](https://lkopietz3-byte.github.io/honesty-kits/#corroboration-kit)** · Part of [honesty kits](https://github.com/lkopietz3-byte/honesty-kits), a family of small checks for the claims an AI product makes.
+Formerly published as `corroboration-kit`.
+
+**[Try it in your browser →](https://evidencekit.github.io/#corroboration)** · Part of [Evidence Kit](https://github.com/evidencekit), a family of small checks that tie AI output and public claims back to their evidence.
 
 **Who it is for.** Engineers who already collect typed evidence about a claim
 (scanner findings, data-QA checks, the sources behind an AI answer) and want
@@ -24,7 +26,7 @@ invisible to it. `'confirmed'` means the signals you supplied passed these
 counting rules.
 
 ```ts
-import { corroborate, coverageOf } from 'corroboration-kit'
+import { corroborate, coverageOf } from '@evidencekit/corroboration'
 
 const coverage = coverageOf(/* sampledUnits */ 40, /* totalUnits */ 400, /* hadStructuralReadAccess */ true)
 
@@ -134,7 +136,7 @@ distinct evidence sources of more than one kind.
 ## Install
 
 ```bash
-npm install corroboration-kit
+npm install @evidencekit/corroboration
 ```
 
 Zero runtime dependencies. Ships TypeScript declarations. Or build from
@@ -145,8 +147,8 @@ load it. `require()` also works where Node can `require(esm)`:
 
 | How you load it | Node 20.19+ | Node 22.12+ | Node 24 and 26 | Older Node 20 or 22 |
 | --- | --- | --- | --- | --- |
-| `import { corroborate } from 'corroboration-kit'` | works | works | works | works |
-| `require('corroboration-kit')` | works | works | works | fails (no `require(esm)`); use `import()` |
+| `import { corroborate } from '@evidencekit/corroboration'` | works | works | works | works |
+| `require('@evidencekit/corroboration')` | works | works | works | fails (no `require(esm)`); use `import()` |
 
 Recommended runtimes are Node 22 and 24 (LTS) and Node 26 (current). Node 20 is
 end-of-life. CI still runs the tests and the installed-package probes on Node
@@ -599,19 +601,19 @@ is honest, correctly labeled, or actually independent in reality:
 
 ## Relationship to sibling kits
 
-- [`grounding-kit`](https://github.com/lkopietz3-byte/grounding-kit) checks,
+- [`@evidencekit/citations`](https://github.com/evidencekit/citations) checks,
   mechanically, that a citation marker in AI-generated text points at an
   evidence span related to its sentence (its default matcher is word overlap,
   not semantic entailment, and it does not judge whether the evidence is
-  true). `corroboration-kit` applies fixed counting rules to signals you have
-  already collected and labeled for a claim. Run `grounding-kit` first to find
-  which sentences claim support, then `corroboration-kit` if you want its rules
+  true). `@evidencekit/corroboration` applies fixed counting rules to signals you have
+  already collected and labeled for a claim. Run `@evidencekit/citations` first to find
+  which sentences claim support, then `@evidencekit/corroboration` if you want its rules
   applied to the signals you gathered. The two share no code.
-- [`provenance-kit`](https://github.com/lkopietz3-byte/provenance-kit) labels
+- [`@evidencekit/wording`](https://github.com/evidencekit/wording) labels
   claims with an evidence tier and checks that public wording is not stronger
   than the tier allows; it never looks at evidence and does not know about
   corroboration verdicts or signals. The two are not integrated in code. A
-  `corroboration-kit` verdict could be one input to a person's decision about
+  `@evidencekit/corroboration` verdict could be one input to a person's decision about
   which tier a claim is entitled to, and nothing more.
 
 ## Relationship to LaunchPlanr's `corroborate.ts`

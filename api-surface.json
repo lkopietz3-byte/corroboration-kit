@@ -1,5 +1,5 @@
 {
-  "corroboration-kit": [
+  "@evidencekit/corroboration": [
     "corroborate",
     "coverageLabel",
     "coverageOf",

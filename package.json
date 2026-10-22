@@ -1,7 +1,7 @@
 {
-  "name": "corroboration-kit",
-  "version": "0.3.0",
-  "description": "A domain-agnostic evidence-corroboration grader: distinct-source independence, a non-textual-signal gate for 'confirmed', a coverage ceiling, and disagreement surfaced as 'mixed' instead of averaged away.",
+  "name": "@evidencekit/corroboration",
+  "version": "0.3.1",
+  "description": "Evidence corroboration grader: counts distinct source origins, requires a non-textual signal for 'confirmed', caps verdicts by coverage, and surfaces disagreement as 'mixed'. Checks that tie AI output and public claims back to their evidence.",
   "keywords": [
     "corroboration",
     "evidence",
@@ -10,17 +10,19 @@
     "fact-checking",
     "grading",
     "typescript",
-    "honesty-kits"
+    "corroboration-kit",
+    "evidence-kit",
+    "claims"
   ],
   "author": "Lucas Kopietz",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lkopietz3-byte/corroboration-kit.git"
+    "url": "git+https://github.com/evidencekit/corroboration.git"
   },
-  "homepage": "https://lkopietz3-byte.github.io/honesty-kits/#corroboration-kit",
+  "homepage": "https://github.com/evidencekit/corroboration#readme",
   "bugs": {
-    "url": "https://github.com/lkopietz3-byte/corroboration-kit/issues"
+    "url": "https://github.com/evidencekit/corroboration/issues"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -64,5 +66,9 @@
     "typescript-eslint": "8.70.0",
     "vite": "7.3.6",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

@@ -4,7 +4,7 @@
 // because a .cjs extension always forces CommonJS. Run by verify-package.mjs.
 const assert = require('node:assert/strict');
 
-const { corroborate, coverageOf, verdictLabel, coverageLabel } = require('corroboration-kit');
+const { corroborate, coverageOf, verdictLabel, coverageLabel } = require('@evidencekit/corroboration');
 
 assert.equal(typeof corroborate, 'function');
 assert.equal(coverageOf(15, 100, false), 'partial');

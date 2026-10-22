@@ -21,7 +21,7 @@ import {
   type SignalKind,
   type Vote,
   type Verdict,
-} from 'corroboration-kit'
+} from '@evidencekit/corroboration'
 
 const kinds: SignalKind[] = ['textual', 'structural', 'behavioral', 'declarative']
 const votes: Vote[] = ['supports', 'contradicts', 'inconclusive']

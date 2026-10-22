@@ -1,4 +1,4 @@
-// corroboration-kit — a domain-agnostic evidence-corroboration grader.
+// @evidencekit/corroboration — a domain-agnostic evidence-corroboration grader.
 //
 // The core idea: a claim is not "confirmed" because one check happened to
 // match. It is graded by how many INDEPENDENT sources actually agree, what

@@ -1,10 +1,10 @@
-// Imports corroboration-kit BY NAME from the installed tarball (see
+// Imports @evidencekit/corroboration BY NAME from the installed tarball (see
 // verify-package.mjs) and calls the real API, asserting real outputs the way
 // an actual consumer would. Not a smoke test: every exported function is
 // called at least once at a boundary that pins its documented behavior.
 import assert from 'node:assert/strict';
 
-const { corroborate, coverageOf, verdictLabel, coverageLabel, originOf, sourceIdentity } = await import('corroboration-kit');
+const { corroborate, coverageOf, verdictLabel, coverageLabel, originOf, sourceIdentity } = await import('@evidencekit/corroboration');
 
 // --- coverageOf -------------------------------------------------------------
 
