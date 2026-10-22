@@ -14,7 +14,7 @@ change: the exported API is identical. Error messages keep their
 `corroboration-kit:` prefix. Update your install line and imports to the new
 name; the old name will not receive further releases.
 
-## [0.3.0] - unreleased
+## [0.3.0] - 2026-10-12
 
 Minor release. `'confirmed'` now counts independent origins instead of
 different strings, so some inputs that were `'confirmed'` in 0.2.x are now
