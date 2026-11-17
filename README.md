@@ -2,11 +2,34 @@
 
 **[Try it in your browser →](https://lkopietz3-byte.github.io/honesty-kits/#corroboration-kit)** · Part of [honesty kits](https://github.com/lkopietz3-byte/honesty-kits), a family of small checks for the claims an AI product makes.
 
-**Who it is for.** Engineers who already collect typed evidence about a claim
-(scanner findings, data-QA checks, the sources behind an AI answer) and want
-one small, readable rule for how strongly the claim stands. It is a counting
-core: it takes the signals you collected and labeled, and returns a verdict you
-can explain line by line.
+```ts
+import { corroborate, coverageOf } from 'corroboration-kit'
+
+// Claim: "the invoice PDF feature is live."
+// You checked all 12 places that could say so, and you could read structure.
+const coverage = coverageOf(/* sampledUnits */ 12, /* totalUnits */ 12, /* hadStructuralReadAccess */ true)
+
+const result = corroborate(
+  [
+    { source: 'https://github.com/acme/billing/blob/main/config/flags.json', kind: 'declarative', vote: 'supports', detail: 'flag "invoice_pdf" is set to true' },
+    { source: 'https://status.acme.example/changelog', kind: 'textual', vote: 'supports', detail: 'the changelog says invoice PDFs shipped' },
+    { source: 'prod-db:feature_flags/invoice_pdf', kind: 'declarative', vote: 'supports', detail: 'the production row is enabled' },
+  ],
+  coverage,
+)
+
+// result.verdict   === 'confirmed'
+// result.direction === 'supports'
+// result.groups lists three separate origins: a repository, a status site
+// and a database. Two of the signals are declarative, not just text, and the
+// sample is strong (12 of 12), so nothing caps the verdict.
+```
+
+Two things would have kept this at `'likely'`. If every signal were
+`'textual'`, the non-text rule would block `'confirmed'`: two, five or fifty
+text matches from distinct sources still cap at `'likely'`. If you had looked
+at only 40 of 400 places, `coverageOf(40, 400, true)` is `'thin'`, and a thin
+sample caps the verdict no matter how well the signals it did find line up.
 
 **What `'confirmed'` means.** At least two *independent origins* agree, at
 least one of the agreeing signals is not just text (it is `structural`,
@@ -23,96 +46,36 @@ lineage you do not declare (a data set that quietly copies another) is
 invisible to it. `'confirmed'` means the signals you supplied passed these
 counting rules.
 
-```ts
-import { corroborate, coverageOf } from 'corroboration-kit'
-
-const coverage = coverageOf(/* sampledUnits */ 40, /* totalUnits */ 400, /* hadStructuralReadAccess */ true)
-
-const result = corroborate(
-  [
-    { source: 'api-response-2026-08-01', kind: 'declarative', vote: 'supports', detail: 'field is set to true' },
-    { source: 'press-release', kind: 'textual', vote: 'supports', detail: 'press release repeats the claim' },
-  ],
-  coverage,
-)
-
-// coverage is 'thin' (40 of 400 units is below the 15% partial threshold),
-// so result.verdict is 'likely' here, even though the two signals are from
-// distinct sources and one is non-textual, which would otherwise be enough
-// to reach 'confirmed'. That's the coverage ceiling: a thin sample caps the
-// verdict no matter how the signals it did find line up.
-// result.direction is 'supports': both counted sources voted that way.
-```
+**Who it is for.** Engineers who already collect typed evidence about a claim
+(scanner findings, data-QA checks, the sources behind an AI answer) and want
+one small, readable rule for how strongly the claim stands. It is a counting
+core: it takes the signals you collected and labeled, and returns a verdict you
+can explain line by line.
 
 Read `verdict` together with `direction`. `'confirmed'` is reachable on the
 contradicting side too, so `verdict: 'confirmed'` with `direction:
 'contradicts'` means the evidence **confirms the claim is false**, not that
 it is true. See [`Corroboration`](#corroboratesignals-signal-coverage-coverage-corroboration).
 
-## Why this exists
+## Why the rules are shaped this way
 
-Most "corroboration" logic in the wild counts **citations**, not
-**independence**. That distinction sounds academic until you see it fail in
-public.
+Most corroboration logic counts citations, not independence. Three rules
+push against that:
 
-[corroborate-mcp](https://github.com/chefcohen/corroborate-mcp) is a real,
-open-source MCP server built for exactly this problem: an honest,
-zero-API-key claim-corroboration tool with verdict tiers `CONFIRMED` (2+
-independent origins), `SINGLE_SOURCE`, and `UNCORROBORATED`. It's a
-well-built tool, and unusually for the category, it publishes its own
-accuracy numbers against a public 40-claim benchmark instead of only
-asserting rigor. Its README's benchmark table, latest run 2026-07-22,
-reports one line plainly:
+- `'confirmed'` is unreachable from textual signals alone. More text saying
+  the same thing is not a different kind of evidence.
+- Independence is counted by distinct origin, not by number of checks run.
+  Grepping one file three times is one signal, and so are two pages of one
+  site.
+- Coverage of the evidence pool is a ceiling on the verdict, not an input
+  averaged in. A scan that sampled a sliver of a large pool cannot land on
+  `'confirmed'`, and a null result from a thin sample is `'inconclusive'`,
+  not `'not-found'`, because you cannot prove a negative from a small sample.
 
-> **Distorted claims falsely CONFIRMED: 6/6**
-
-All six deliberately distorted test claims (real, currently-reported topics
-with a false specific detail swapped in, such as reporting that Samsung had
-cancelled a phone it had in fact just unveiled) came back `CONFIRMED`. The
-tool's own honest-limitations section explains why: its
-entire evidence pipeline is text. It searches news text (Google News RSS,
-GDELT, Hacker News), gates relevance by keyword overlap in headlines, and
-clusters near-duplicate headlines into "independent origins." Every signal in
-that pipeline is textual, and every corroboration decision is made from
-text alone. So when a topic has real, independent textual coverage but the
-*specific* claim about it is wrong, nothing in the pipeline can tell the
-difference: the independence check is satisfied by topical text volume,
-not by any signal that actually verifies the distorted detail. Multiple
-outlets independently writing about the real event is not multiple outlets
-independently confirming the false detail grafted onto it, but a
-text-only independence count cannot see that gap.
-
-This is exactly the failure mode this library's core design rule exists to
-close: **`confirmed` is structurally unreachable from textual signals alone.**
-Two, five, or fifty text matches from distinct sources still cap at
-`'likely'` here, because a `Signal` with `kind: 'textual'` can never by
-itself clear the bar. Reaching `'confirmed'` requires at least one signal of
-a genuinely different kind (`'structural'`, `'behavioral'`, or
-`'declarative'`), something that isn't just more text saying the same thing,
-because more text saying the same thing is precisely what corroborate-mcp's
-own published benchmark shows can be wrong six times out of six. This isn't
-a claim that this library is "more rigorous" in the abstract; it's one
-specific design choice (a non-textual gate on `'confirmed'`), aimed
-directly at one specific, documented, cited failure in a close cousin of
-this exact problem.
-
-Two other rules follow the same standard of not overstating what was found:
-independence is counted by **distinct origin**, not by number of checks run
-or strings written (grepping the same file three times is one signal, and so
-are two pages of one site),
-and coverage of the evidence pool is a **ceiling** on the verdict, not an
-input averaged in: a scan that only sampled a sliver of a large pool cannot
-land on `'confirmed'` regardless of how clean its signals look, and a null
-result from a thin sample is `'inconclusive'`, not `'not-found'`, because you
-cannot prove a negative from a small sample.
-
-This library was extracted from a code-honesty scanner
-(`corroborate.ts` in LaunchPlanr, a private project, which grades findings about a codebase from signals like
-dependency manifests, sampled source files, and directory structure) into a
-standalone, domain-agnostic form. Nothing here is specific to code: the same
-five rules apply to grading a claim from news sources, a hypothesis from lab
-results, or a support ticket from log lines: anywhere you have named,
-distinct evidence sources of more than one kind.
+Nothing here is specific to code. The same rules apply to grading a claim
+from news sources, a hypothesis from lab results, or a support ticket from log
+lines: anywhere you have named, distinct evidence sources of more than one
+kind.
 
 ## When not to use it
 
@@ -613,17 +576,6 @@ is honest, correctly labeled, or actually independent in reality:
   corroboration verdicts or signals. The two are not integrated in code. A
   `corroboration-kit` verdict could be one input to a person's decision about
   which tier a claim is entitled to, and nothing more.
-
-## Relationship to LaunchPlanr's `corroborate.ts`
-
-This is a from-scratch rewrite of the same five rules, not a re-export. The
-original is private and no comparison test against it ships in this
-repository, so this README does not claim the two agree on every input; the
-tests here pin the behavior of this package. What changed in extraction:
-input validation that throws on malformed `Signal`/`Coverage` values instead
-of silently mis-grading them, source-identity normalization (whitespace,
-Unicode, URL variants), and a `Corroboration.signals` result that is a
-snapshot copy rather than the caller's own array.
 
 ## License
 
