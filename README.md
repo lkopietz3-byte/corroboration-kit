@@ -55,7 +55,7 @@ can explain line by line.
 Read `verdict` together with `direction`. `'confirmed'` is reachable on the
 contradicting side too, so `verdict: 'confirmed'` with `direction:
 'contradicts'` means the evidence **confirms the claim is false**, not that
-it is true. See [`Corroboration`](#corroboratesignals-signal-coverage-coverage-corroboration).
+it is true. See [`Corroboration`](#corroboratesignals-signal-coverage-coverage-options-corroborateoptions-corroboration).
 
 ## Why the rules are shaped this way
 
