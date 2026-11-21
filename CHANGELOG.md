@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-20
+
+Documentation only. The package code and API are the same as 0.3.0.
+
+### Changed
+
+- The packaged CHANGELOG dates every release. The 0.3.0 package listed its own version as unreleased.
+- A confirmed contradiction is described as the signals you supplied meeting the kit's rules, not as proof the claim is false.
+- The link to the corroborate API section works again.
+
 ## [0.3.0] - 2026-10-12
 
 Minor release. `'confirmed'` now counts independent origins instead of
