@@ -54,8 +54,8 @@ can explain line by line.
 
 Read `verdict` together with `direction`. `'confirmed'` is reachable on the
 contradicting side too, so `verdict: 'confirmed'` with `direction:
-'contradicts'` means the evidence **confirms the claim is false**, not that
-it is true. See [`Corroboration`](#corroboratesignals-signal-coverage-coverage-options-corroborateoptions-corroboration).
+'contradicts'` means the signals you supplied against the claim met the kit’s
+confirmation rules. See [`Corroboration`](#corroboratesignals-signal-coverage-coverage-options-corroborateoptions-corroboration).
 
 ## Why the rules are shaped this way
 
@@ -335,8 +335,8 @@ sources were counted, `'mixed'` when both were (exactly when `verdict` is
 or `'inconclusive'`). Signals voting `'inconclusive'` are not counted. It never
 changes the verdict.
 
-**`'confirmed'` with `direction: 'contradicts'` means the evidence confirms
-the claim is FALSE.** The bar for a confirmed contradiction is the same as
+**`'confirmed'` with `direction: 'contradicts'` means your opposing signals
+met the kit’s confirmation rules.** The bar for a confirmed contradiction is the same as
 for a confirmed support (2+ distinct sources, at least one non-textual), and
 the result is `verdict: 'confirmed'`, `supports: 0`, `contradicts: 2`. A
 consumer that shows only the verdict would read that as confirmation of the
